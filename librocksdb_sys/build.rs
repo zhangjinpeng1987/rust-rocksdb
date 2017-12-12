@@ -68,9 +68,9 @@ fn build_rocksdb() -> Build {
     if cfg!(feature = "portable") {
         cfg.define("PORTABLE", "ON");
     }
-    if cfg!(feature = "sse") {
+    /*if cfg!(feature = "sse") {
         cfg.define("FORCE_SSE42", "ON");
-    }
+    }*/
     let dst = cfg.register_dep("Z").define("WITH_ZLIB", "ON")
         .register_dep("BZIP2").define("WITH_BZ2", "ON")
         .register_dep("LZ4").define("WITH_LZ4", "ON")
