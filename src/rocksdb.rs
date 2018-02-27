@@ -80,6 +80,7 @@ pub struct DB {
     path: String,
     opts: DBOptions,
     _cf_opts: Vec<ColumnFamilyOptions>,
+    readonly: bool,
 }
 
 impl Debug for DB {
@@ -431,6 +432,11 @@ impl DB {
             .map(|x| x.inner as *const crocksdb_ffi::Options)
             .collect();
 
+        let readonly = if error_if_log_file_exist.is_some() {
+            true
+        } else {
+            false
+        };
         let db = {
             let db_options = opts.inner;
             let db_path = cpath.as_ptr();
@@ -482,6 +488,7 @@ impl DB {
             path: path.to_owned(),
             opts: opts,
             _cf_opts: options,
+            readonly: readonly,
         })
     }
 
@@ -1484,7 +1491,9 @@ impl Drop for WriteBatch {
 impl Drop for DB {
     fn drop(&mut self) {
         // SyncWAL before call close.
-        self.sync_wal().unwrap();
+        if !self.readonly {
+            self.sync_wal().unwrap();
+        }
         unsafe {
             self.cfs.clear();
             crocksdb_ffi::crocksdb_close(self.inner);
