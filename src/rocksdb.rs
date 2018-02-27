@@ -1483,6 +1483,8 @@ impl Drop for WriteBatch {
 
 impl Drop for DB {
     fn drop(&mut self) {
+        // SyncWAL before call close.
+        self.sync_wal().unwrap();
         unsafe {
             self.cfs.clear();
             crocksdb_ffi::crocksdb_close(self.inner);
