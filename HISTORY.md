@@ -1,17 +1,81 @@
 # Rocksdb Change Log
-## 5.7.3 (08/29/2017)
+## 5.10.4 (02/22/2018)
+### New Features
+* Follow rsync-style naming convention for BackupEngine tempfiles. This enables some optimizations when run on GlusterFS.
+* Fix regression of Java build break on Windows.
+
+## 5.10.3 (02/21/2018)
+### Bug fixes
+* Fix build break regression using gcc-7
+* Direct I/O writable file should do fsync in Close()
+
+### New Features
+* Add rocksdb.iterator.internal-key property
+
+## 5.10.1 (01/18/2018)
 ### Bug Fixes
+* Fix DB::Flush() keep waiting after flush finish under certain condition.
+
+## 5.10.0 (12/11/2017)
+### Public API Change
+* When running `make` with environment variable `USE_SSE` set and `PORTABLE` unset, will use all machine features available locally. Previously this combination only compiled SSE-related features.
+
+### New Features
+* CRC32C is now using the 3-way pipelined SSE algorithm `crc32c_3way` on supported platforms to improve performance. The system will choose to use this algorithm on supported platforms automatically whenever possible. If PCLMULQDQ is not supported it will fall back to the old Fast_CRC32 algorithm.
+* Provide lifetime hints when writing files on Linux. This reduces hardware write-amp on storage devices supporting multiple streams.
+* Add a DB stat, `NUMBER_ITER_SKIP`, which returns how many internal keys were skipped during iterations (e.g., due to being tombstones or duplicate versions of a key).
+* Add PerfContext counters, `key_lock_wait_count` and `key_lock_wait_time`, which measure the number of times transactions wait on key locks and total amount of time waiting.
+
+### Bug Fixes
+* Fix IOError on WAL write doesn't propagate to write group follower
+* Make iterator invalid on merge error.
+* Fix performance issue in `IngestExternalFile()` affecting databases with large number of SST files.
+* Fix possible corruption to LSM structure when `DeleteFilesInRange()` deletes a subset of files spanned by a `DeleteRange()` marker.
+
+## 5.9.0 (11/1/2017)
+### Public API Change
+* `BackupableDBOptions::max_valid_backups_to_open == 0` now means no backups will be opened during BackupEngine initialization. Previously this condition disabled limiting backups opened.
+* `DBOptions::preserve_deletes` is a new option that allows one to specify that DB should not drop tombstones for regular deletes if they have sequence number larger than what was set by the new API call `DB::SetPreserveDeletesSequenceNumber(SequenceNumber seqnum)`. Disabled by default.
+* API call `DB::SetPreserveDeletesSequenceNumber(SequenceNumber seqnum)` was added, users who wish to preserve deletes are expected to periodically call this function to advance the cutoff seqnum (all deletes made before this seqnum can be dropped by DB). It's user responsibility to figure out how to advance the seqnum in the way so the tombstones are kept for the desired period of time, yet are eventually processed in time and don't eat up too much space.
+* `ReadOptions::iter_start_seqnum` was added; if set to something > 0 user will see 2 changes in iterators behavior 1) only keys written with sequence larger than this parameter would be returned and 2) the `Slice` returned by iter->key() now points to the the memory that keep User-oriented representation of the internal key, rather than user key. New struct `FullKey` was added to represent internal keys, along with a new helper function `ParseFullKey(const Slice& internal_key, FullKey* result);`.
+* Deprecate trash_dir param in NewSstFileManager, right now we will rename deleted files to <name>.trash instead of moving them to trash directory
+* Allow setting a custom trash/DB size ratio limit in the SstFileManager, after which files that are to be scheduled for deletion are deleted immediately, regardless of any delete ratelimit.
+* Return an error on write if write_options.sync = true and write_options.disableWAL = true to warn user of inconsistent options. Previously we will not write to WAL and not respecting the sync options in this case.
+
+### New Features
+* `DBOptions::writable_file_max_buffer_size` can now be changed dynamically.
+* `DBOptions::bytes_per_sync`, `DBOptions::compaction_readahead_size`, and `DBOptions::wal_bytes_per_sync` can now be changed dynamically, `DBOptions::wal_bytes_per_sync` will flush all memtables and switch to a new WAL file.
+* Support dynamic adjustment of rate limit according to demand for background I/O. It can be enabled by passing `true` to the `auto_tuned` parameter in `NewGenericRateLimiter()`. The value passed as `rate_bytes_per_sec` will still be respected as an upper-bound.
+* Support dynamically changing `ColumnFamilyOptions::compaction_options_fifo`.
+* Introduce `EventListener::OnStallConditionsChanged()` callback. Users can implement it to be notified when user writes are stalled, stopped, or resumed.
+* Add a new db property "rocksdb.estimate-oldest-key-time" to return oldest data timestamp. The property is available only for FIFO compaction with compaction_options_fifo.allow_compaction = false.
+* Upon snapshot release, recompact bottommost files containing deleted/overwritten keys that previously could not be dropped due to the snapshot. This alleviates space-amp caused by long-held snapshots.
+* Support lower bound on iterators specified via `ReadOptions::iterate_lower_bound`.
+* Support for differential snapshots (via iterator emitting the sequence of key-values representing the difference between DB state at two different sequence numbers). Supports preserving and emitting puts and regular deletes, doesn't support SingleDeletes, MergeOperator, Blobs and Range Deletes.
+
+### Bug Fixes
+* Fix a potential data inconsistency issue during point-in-time recovery. `DB:Open()` will abort if column family inconsistency is found during PIT recovery.
+* Fix possible metadata corruption in databases using `DeleteRange()`.
+
+## 5.8.0 (08/30/2017)
+### Public API Change
+* Users of `Statistics::getHistogramString()` will see fewer histogram buckets and different bucket endpoints.
+* `Slice::compare` and BytewiseComparator `Compare` no longer accept `Slice`s containing nullptr.
+* `Transaction::Get` and `Transaction::GetForUpdate` variants with `PinnableSlice` added.
+
+### New Features
+* Add Iterator::Refresh(), which allows users to update the iterator state so that they can avoid some initialization costs of recreating iterators.
+* Replace dynamic_cast<> (except unit test) so people can choose to build with RTTI off. With make, release mode is by default built with -fno-rtti and debug mode is built without it. Users can override it by setting USE_RTTI=0 or 1.
+* Universal compactions including the bottom level can be executed in a dedicated thread pool. This alleviates head-of-line blocking in the compaction queue, which cause write stalling, particularly in multi-instance use cases. Users can enable this feature via `Env::SetBackgroundThreads(N, Env::Priority::BOTTOM)`, where `N > 0`.
+* Allow merge operator to be called even with a single merge operand during compactions, by appropriately overriding `MergeOperator::AllowSingleOperand`.
+* Add `DB::VerifyChecksum()`, which verifies the checksums in all SST files in a running DB.
+* Block-based table support for disabling checksums by setting `BlockBasedTableOptions::checksum = kNoChecksum`.
+
+### Bug Fixes
+* Fix wrong latencies in `rocksdb.db.get.micros`, `rocksdb.db.write.micros`, and `rocksdb.sst.read.micros`.
+* Fix incorrect dropping of deletions during intra-L0 compaction.
 * Fix transient reappearance of keys covered by range deletions when memtable prefix bloom filter is enabled.
 * Fix potentially wrong file smallest key when range deletions separated by snapshot are written together.
-
-## 5.7.2 (08/15/2017)
-### Bug Fixes
-* Fix incorrect dropping of deletions issue with FIFO compaction.
-* Fix LITE build compiler error with missing abort().
-
-## 5.7.1 (08/13/2017)
-### Bug Fixes
-* Fix incorrect dropping of deletions during intra-L0 compaction.
 
 ## 5.7.0 (07/13/2017)
 ### Public API Change

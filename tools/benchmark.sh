@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # REQUIRE: db_bench binary exists in the current directory
 
 if [ $# -ne 1 ]; then
@@ -449,6 +449,7 @@ echo "===== Benchmark ====="
 
 # Run!!!
 IFS=',' read -a jobs <<< $1
+# shellcheck disable=SC2068
 for job in ${jobs[@]}; do
 
   if [ $job != debug ]; then

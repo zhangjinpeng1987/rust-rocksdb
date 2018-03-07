@@ -74,7 +74,9 @@ WinEnvIO::WinEnvIO(Env* hosted_env)
 
   {
     LARGE_INTEGER qpf;
-    BOOL ret = QueryPerformanceFrequency(&qpf);
+    // No init as the compiler complains about unused var
+    BOOL ret;
+    ret = QueryPerformanceFrequency(&qpf);
     assert(ret == TRUE);
     perf_counter_frequency_ = qpf.QuadPart;
   }
@@ -784,6 +786,8 @@ EnvOptions WinEnvIO::OptimizeForLogWrite(const EnvOptions& env_options,
   // breaks TransactionLogIteratorStallAtLastRecord unit test. Fix the unit
   // test and make this false
   optimized.fallocate_with_keep_size = true;
+  optimized.writable_file_max_buffer_size =
+      db_options.writable_file_max_buffer_size;
   return optimized;
 }
 
@@ -829,7 +833,7 @@ WinEnvThreads::~WinEnvThreads() {
 
 void WinEnvThreads::Schedule(void(*function)(void*), void* arg, Env::Priority pri,
   void* tag, void(*unschedFunction)(void* arg)) {
-  assert(pri >= Env::Priority::LOW && pri <= Env::Priority::HIGH);
+  assert(pri >= Env::Priority::BOTTOM && pri <= Env::Priority::HIGH);
   thread_pools_[pri].Schedule(function, arg, tag, unschedFunction);
 }
 
@@ -878,7 +882,7 @@ void WinEnvThreads::WaitForJoin() {
 }
 
 unsigned int WinEnvThreads::GetThreadPoolQueueLen(Env::Priority pri) const {
-  assert(pri >= Env::Priority::LOW && pri <= Env::Priority::HIGH);
+  assert(pri >= Env::Priority::BOTTOM && pri <= Env::Priority::HIGH);
   return thread_pools_[pri].GetQueueLen();
 }
 
@@ -894,17 +898,17 @@ void  WinEnvThreads::SleepForMicroseconds(int micros) {
 }
 
 void WinEnvThreads::SetBackgroundThreads(int num, Env::Priority pri) {
-  assert(pri >= Env::Priority::LOW && pri <= Env::Priority::HIGH);
+  assert(pri >= Env::Priority::BOTTOM && pri <= Env::Priority::HIGH);
   thread_pools_[pri].SetBackgroundThreads(num);
 }
 
 int WinEnvThreads::GetBackgroundThreads(Env::Priority pri) {
-  assert(pri >= Env::Priority::LOW && pri <= Env::Priority::HIGH);
+  assert(pri >= Env::Priority::BOTTOM && pri <= Env::Priority::HIGH);
   return thread_pools_[pri].GetBackgroundThreads();
 }
 
 void WinEnvThreads::IncBackgroundThreadsIfNeeded(int num, Env::Priority pri) {
-  assert(pri >= Env::Priority::LOW && pri <= Env::Priority::HIGH);
+  assert(pri >= Env::Priority::BOTTOM && pri <= Env::Priority::HIGH);
   thread_pools_[pri].IncBackgroundThreadsIfNeeded(num);
 }
 

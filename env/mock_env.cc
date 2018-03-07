@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <chrono>
 #include "port/sys_time.h"
+#include "util/cast_util.h"
 #include "util/murmurhash.h"
 #include "util/random.h"
 #include "util/rate_limiter.h"
@@ -378,7 +379,8 @@ class TestMemLogger : public Logger {
       const time_t seconds = now_tv.tv_sec;
       struct tm t;
       memset(&t, 0, sizeof(t));
-      auto ret __attribute__((__unused__)) = localtime_r(&seconds, &t);
+      struct tm* ret __attribute__((__unused__));
+      ret = localtime_r(&seconds, &t);
       assert(ret);
       p += snprintf(p, limit - p,
                     "%04d/%02d/%02d-%02d:%02d:%02d.%06d ",
@@ -711,7 +713,8 @@ Status MockEnv::LockFile(const std::string& fname, FileLock** flock) {
 }
 
 Status MockEnv::UnlockFile(FileLock* flock) {
-  std::string fn = dynamic_cast<MockEnvFileLock*>(flock)->FileName();
+  std::string fn =
+      static_cast_with_check<MockEnvFileLock, FileLock>(flock)->FileName();
   {
     MutexLock lock(&mutex_);
     if (file_map_.find(fn) != file_map_.end()) {

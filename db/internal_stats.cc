@@ -13,8 +13,9 @@
 #endif
 
 #include <inttypes.h>
-#include <string>
 #include <algorithm>
+#include <limits>
+#include <string>
 #include <utility>
 #include <vector>
 #include "db/column_family.h"
@@ -243,6 +244,7 @@ static const std::string num_running_flushes = "num-running-flushes";
 static const std::string actual_delayed_write_rate =
     "actual-delayed-write-rate";
 static const std::string is_write_stopped = "is-write-stopped";
+static const std::string estimate_oldest_key_time = "estimate-oldest-key-time";
 
 const std::string DB::Properties::kNumFilesAtLevelPrefix =
                       rocksdb_prefix + num_files_at_level_prefix;
@@ -316,6 +318,8 @@ const std::string DB::Properties::kActualDelayedWriteRate =
     rocksdb_prefix + actual_delayed_write_rate;
 const std::string DB::Properties::kIsWriteStopped =
     rocksdb_prefix + is_write_stopped;
+const std::string DB::Properties::kEstimateOldestKeyTime =
+    rocksdb_prefix + estimate_oldest_key_time;
 
 const std::unordered_map<std::string, DBPropertyInfo>
     InternalStats::ppt_name_to_info = {
@@ -414,6 +418,9 @@ const std::unordered_map<std::string, DBPropertyInfo>
           nullptr}},
         {DB::Properties::kIsWriteStopped,
          {false, nullptr, &InternalStats::HandleIsWriteStopped, nullptr}},
+        {DB::Properties::kEstimateOldestKeyTime,
+         {false, nullptr, &InternalStats::HandleEstimateOldestKeyTime,
+          nullptr}},
 };
 
 const DBPropertyInfo* GetPropertyInfo(const Slice& property) {
@@ -436,7 +443,7 @@ bool InternalStats::GetStringProperty(const DBPropertyInfo& property_info,
 
 bool InternalStats::GetMapProperty(const DBPropertyInfo& property_info,
                                    const Slice& property,
-                                   std::map<std::string, double>* value) {
+                                   std::map<std::string, std::string>* value) {
   assert(value != nullptr);
   assert(property_info.handle_map != nullptr);
   return (this->*(property_info.handle_map))(value);
@@ -514,7 +521,8 @@ bool InternalStats::HandleStats(std::string* value, Slice suffix) {
   return true;
 }
 
-bool InternalStats::HandleCFMapStats(std::map<std::string, double>* cf_stats) {
+bool InternalStats::HandleCFMapStats(
+    std::map<std::string, std::string>* cf_stats) {
   DumpCFMapStats(cf_stats);
   return true;
 }
@@ -775,6 +783,36 @@ bool InternalStats::HandleIsWriteStopped(uint64_t* value, DBImpl* db,
   return true;
 }
 
+bool InternalStats::HandleEstimateOldestKeyTime(uint64_t* value, DBImpl* /*db*/,
+                                                Version* /*version*/) {
+  // TODO(yiwu): The property is currently available for fifo compaction
+  // with allow_compaction = false. This is because we don't propagate
+  // oldest_key_time on compaction.
+  if (cfd_->ioptions()->compaction_style != kCompactionStyleFIFO ||
+      cfd_->GetCurrentMutableCFOptions()
+          ->compaction_options_fifo.allow_compaction) {
+    return false;
+  }
+
+  TablePropertiesCollection collection;
+  auto s = cfd_->current()->GetPropertiesOfAllTables(&collection);
+  if (!s.ok()) {
+    return false;
+  }
+  *value = std::numeric_limits<uint64_t>::max();
+  for (auto& p : collection) {
+    *value = std::min(*value, p.second->oldest_key_time);
+    if (*value == 0) {
+      break;
+    }
+  }
+  if (*value > 0) {
+    *value = std::min({cfd_->mem()->ApproximateOldestKeyTime(),
+                       cfd_->imm()->ApproximateOldestKeyTime(), *value});
+  }
+  return *value > 0 && *value < std::numeric_limits<uint64_t>::max();
+}
+
 void InternalStats::DumpDBStats(std::string* value) {
   char buf[1000];
   // DB-level stats, only available from default column family
@@ -892,12 +930,15 @@ void InternalStats::DumpDBStats(std::string* value) {
 }
 
 /**
- * Dump Compaction Level stats to a map of stat name to value in double.
- * The level in stat name is represented with a prefix "Lx" where "x"
- * is the level number. A special level "Sum" represents the sum of a stat
- * for all levels.
+ * Dump Compaction Level stats to a map of stat name with "compaction." prefix
+ * to value in double as string. The level in stat name is represented with
+ * a prefix "Lx" where "x" is the level number. A special level "Sum"
+ * represents the sum of a stat for all levels.
+ * The result also contains IO stall counters which keys start with "io_stalls."
+ * and values represent uint64 encoded as strings.
  */
-void InternalStats::DumpCFMapStats(std::map<std::string, double>* cf_stats) {
+void InternalStats::DumpCFMapStats(
+        std::map<std::string, std::string>* cf_stats) {
   CompactionStats compaction_stats_sum(0);
   std::map<int, std::map<LevelStatType, double>> levels_stats;
   DumpCFMapStats(&levels_stats, &compaction_stats_sum);
@@ -907,11 +948,13 @@ void InternalStats::DumpCFMapStats(std::map<std::string, double>* cf_stats) {
     for (auto const& stat_ent : level_ent.second) {
       auto stat_type = stat_ent.first;
       auto key_str =
-          level_str + "." +
+          "compaction." + level_str + "." +
           InternalStats::compaction_level_stats.at(stat_type).property_name;
-      (*cf_stats)[key_str] = stat_ent.second;
+      (*cf_stats)[key_str] = std::to_string(stat_ent.second);
     }
   }
+
+  DumpCFMapStatsIOStalls(cf_stats);
 }
 
 void InternalStats::DumpCFMapStats(
@@ -982,6 +1025,38 @@ void InternalStats::DumpCFMapStats(
   (*levels_stats)[-1] = sum_stats;  //  -1 is for the Sum level
 }
 
+void InternalStats::DumpCFMapStatsIOStalls(
+    std::map<std::string, std::string>* cf_stats) {
+  (*cf_stats)["io_stalls.level0_slowdown"] =
+      std::to_string(cf_stats_count_[L0_FILE_COUNT_LIMIT_SLOWDOWNS]);
+  (*cf_stats)["io_stalls.level0_slowdown_with_compaction"] =
+      std::to_string(cf_stats_count_[LOCKED_L0_FILE_COUNT_LIMIT_SLOWDOWNS]);
+  (*cf_stats)["io_stalls.level0_numfiles"] =
+      std::to_string(cf_stats_count_[L0_FILE_COUNT_LIMIT_STOPS]);
+  (*cf_stats)["io_stalls.level0_numfiles_with_compaction"] =
+      std::to_string(cf_stats_count_[LOCKED_L0_FILE_COUNT_LIMIT_STOPS]);
+  (*cf_stats)["io_stalls.stop_for_pending_compaction_bytes"] =
+      std::to_string(cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_STOPS]);
+  (*cf_stats)["io_stalls.slowdown_for_pending_compaction_bytes"] =
+      std::to_string(cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_SLOWDOWNS]);
+  (*cf_stats)["io_stalls.memtable_compaction"] =
+      std::to_string(cf_stats_count_[MEMTABLE_LIMIT_STOPS]);
+  (*cf_stats)["io_stalls.memtable_slowdown"] =
+      std::to_string(cf_stats_count_[MEMTABLE_LIMIT_SLOWDOWNS]);
+
+  uint64_t total_stop = cf_stats_count_[L0_FILE_COUNT_LIMIT_STOPS] +
+                        cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_STOPS] +
+                        cf_stats_count_[MEMTABLE_LIMIT_STOPS];
+
+  uint64_t total_slowdown =
+      cf_stats_count_[L0_FILE_COUNT_LIMIT_SLOWDOWNS] +
+      cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_SLOWDOWNS] +
+      cf_stats_count_[MEMTABLE_LIMIT_SLOWDOWNS];
+
+  (*cf_stats)["io_stalls.total_stop"] = std::to_string(total_stop);
+  (*cf_stats)["io_stalls.total_slowdown"] = std::to_string(total_slowdown);
+}
+
 void InternalStats::DumpCFStats(std::string* value) {
   DumpCFStatsNoFileHistogram(value);
   DumpCFFileHistogram(value);
@@ -1016,11 +1091,12 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   uint64_t ingest_keys_addfile = cf_stats_value_[INGESTED_NUM_KEYS_TOTAL];
   // Cumulative summary
   uint64_t total_stall_count =
-      cf_stats_count_[LEVEL0_SLOWDOWN_TOTAL] +
-      cf_stats_count_[LEVEL0_NUM_FILES_TOTAL] +
-      cf_stats_count_[SOFT_PENDING_COMPACTION_BYTES_LIMIT] +
-      cf_stats_count_[HARD_PENDING_COMPACTION_BYTES_LIMIT] +
-      cf_stats_count_[MEMTABLE_COMPACTION] + cf_stats_count_[MEMTABLE_SLOWDOWN];
+      cf_stats_count_[L0_FILE_COUNT_LIMIT_SLOWDOWNS] +
+      cf_stats_count_[L0_FILE_COUNT_LIMIT_STOPS] +
+      cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_SLOWDOWNS] +
+      cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_STOPS] +
+      cf_stats_count_[MEMTABLE_LIMIT_STOPS] +
+      cf_stats_count_[MEMTABLE_LIMIT_SLOWDOWNS];
   // Interval summary
   uint64_t interval_flush_ingest =
       flush_ingest - cf_stats_snapshot_.ingest_bytes_flush;
@@ -1109,31 +1185,32 @@ void InternalStats::DumpCFStatsNoFileHistogram(std::string* value) {
   cf_stats_snapshot_.compact_bytes_read = compact_bytes_read;
   cf_stats_snapshot_.compact_micros = compact_micros;
 
-  snprintf(buf, sizeof(buf), "Stalls(count): %" PRIu64
-                             " level0_slowdown, "
-                             "%" PRIu64
-                             " level0_slowdown_with_compaction, "
-                             "%" PRIu64
-                             " level0_numfiles, "
-                             "%" PRIu64
-                             " level0_numfiles_with_compaction, "
-                             "%" PRIu64
-                             " stop for pending_compaction_bytes, "
-                             "%" PRIu64
-                             " slowdown for pending_compaction_bytes, "
-                             "%" PRIu64
-                             " memtable_compaction, "
-                             "%" PRIu64
-                             " memtable_slowdown, "
-                             "interval %" PRIu64 " total count\n",
-           cf_stats_count_[LEVEL0_SLOWDOWN_TOTAL],
-           cf_stats_count_[LEVEL0_SLOWDOWN_WITH_COMPACTION],
-           cf_stats_count_[LEVEL0_NUM_FILES_TOTAL],
-           cf_stats_count_[LEVEL0_NUM_FILES_WITH_COMPACTION],
-           cf_stats_count_[HARD_PENDING_COMPACTION_BYTES_LIMIT],
-           cf_stats_count_[SOFT_PENDING_COMPACTION_BYTES_LIMIT],
-           cf_stats_count_[MEMTABLE_COMPACTION],
-           cf_stats_count_[MEMTABLE_SLOWDOWN],
+  snprintf(buf, sizeof(buf),
+           "Stalls(count): %" PRIu64
+           " level0_slowdown, "
+           "%" PRIu64
+           " level0_slowdown_with_compaction, "
+           "%" PRIu64
+           " level0_numfiles, "
+           "%" PRIu64
+           " level0_numfiles_with_compaction, "
+           "%" PRIu64
+           " stop for pending_compaction_bytes, "
+           "%" PRIu64
+           " slowdown for pending_compaction_bytes, "
+           "%" PRIu64
+           " memtable_compaction, "
+           "%" PRIu64
+           " memtable_slowdown, "
+           "interval %" PRIu64 " total count\n",
+           cf_stats_count_[L0_FILE_COUNT_LIMIT_SLOWDOWNS],
+           cf_stats_count_[LOCKED_L0_FILE_COUNT_LIMIT_SLOWDOWNS],
+           cf_stats_count_[L0_FILE_COUNT_LIMIT_STOPS],
+           cf_stats_count_[LOCKED_L0_FILE_COUNT_LIMIT_STOPS],
+           cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_STOPS],
+           cf_stats_count_[PENDING_COMPACTION_BYTES_LIMIT_SLOWDOWNS],
+           cf_stats_count_[MEMTABLE_LIMIT_STOPS],
+           cf_stats_count_[MEMTABLE_LIMIT_SLOWDOWNS],
            total_stall_count - cf_stats_snapshot_.stall_count);
   value->append(buf);
 

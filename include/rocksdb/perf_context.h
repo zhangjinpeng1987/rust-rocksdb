@@ -30,6 +30,11 @@ struct PerfContext {
   uint64_t block_read_time;           // total nanos spent on block reads
   uint64_t block_checksum_time;       // total nanos spent on block checksum
   uint64_t block_decompress_time;  // total nanos spent on block decompression
+
+  uint64_t get_read_bytes;       // bytes for vals returned by Get
+  uint64_t multiget_read_bytes;  // bytes for vals returned by MultiGet
+  uint64_t iter_read_bytes;      // bytes for keys/vals decoded by iterator
+
   // total number of internal keys skipped over during iteration.
   // There are several reasons for it:
   // 1. when calling Next(), the iterator is in the position of the previous
@@ -125,6 +130,11 @@ struct PerfContext {
   uint64_t bloom_sst_hit_count;
   // total number of SST table bloom misses
   uint64_t bloom_sst_miss_count;
+
+  // Time spent waiting on key locks in transaction lock manager.
+  uint64_t key_lock_wait_time;
+  // number of times acquiring a lock was blocked by another transaction.
+  uint64_t key_lock_wait_count;
 
   // Total time spent in Env filesystem operations. These are only populated
   // when TimedEnv is used.

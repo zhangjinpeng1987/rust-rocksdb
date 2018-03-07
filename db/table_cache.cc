@@ -106,10 +106,10 @@ Status TableCache::GetTableReader(
     }
     StopWatch sw(ioptions_.env, ioptions_.statistics, TABLE_OPEN_IO_MICROS);
     std::unique_ptr<RandomAccessFileReader> file_reader(
-        new RandomAccessFileReader(std::move(file), fname, ioptions_.env,
-                                   ioptions_.statistics, record_read_stats,
-                                   file_read_hist, ioptions_.rate_limiter,
-                                   for_compaction));
+        new RandomAccessFileReader(
+            std::move(file), fname, ioptions_.env,
+            record_read_stats ? ioptions_.statistics : nullptr, SST_READ_MICROS,
+            file_read_hist, ioptions_.rate_limiter, for_compaction));
     s = ioptions_.table_factory->NewTableReader(
         TableReaderOptions(ioptions_, env_options, internal_comparator,
                            skip_filters, level),
@@ -180,53 +180,57 @@ InternalIterator* TableCache::NewIterator(
   bool create_new_table_reader = false;
   TableReader* table_reader = nullptr;
   Cache::Handle* handle = nullptr;
-  if (s.ok()) {
-    if (table_reader_ptr != nullptr) {
-      *table_reader_ptr = nullptr;
-    }
-    size_t readahead = 0;
-    if (for_compaction) {
+  if (table_reader_ptr != nullptr) {
+    *table_reader_ptr = nullptr;
+  }
+  size_t readahead = 0;
+  if (for_compaction) {
 #ifndef NDEBUG
-      bool use_direct_reads_for_compaction = env_options.use_direct_reads;
-      TEST_SYNC_POINT_CALLBACK("TableCache::NewIterator:for_compaction",
-                               &use_direct_reads_for_compaction);
+    bool use_direct_reads_for_compaction = env_options.use_direct_reads;
+    TEST_SYNC_POINT_CALLBACK("TableCache::NewIterator:for_compaction",
+                             &use_direct_reads_for_compaction);
 #endif  // !NDEBUG
-      if (ioptions_.new_table_reader_for_compaction_inputs) {
-        readahead = ioptions_.compaction_readahead_size;
-        create_new_table_reader = true;
-      }
-    } else {
-      readahead = options.readahead_size;
-      create_new_table_reader = readahead > 0;
+    if (ioptions_.new_table_reader_for_compaction_inputs) {
+      // get compaction_readahead_size from env_options allows us to set the
+      // value dynamically
+      readahead = env_options.compaction_readahead_size;
+      create_new_table_reader = true;
     }
+  } else {
+    readahead = options.readahead_size;
+    create_new_table_reader = readahead > 0;
+  }
 
-    if (create_new_table_reader) {
-      unique_ptr<TableReader> table_reader_unique_ptr;
-      s = GetTableReader(
-          env_options, icomparator, fd, true /* sequential_mode */, readahead,
-          !for_compaction /* record stats */, nullptr, &table_reader_unique_ptr,
-          false /* skip_filters */, level,
-          true /* prefetch_index_and_filter_in_cache */, for_compaction);
+  if (create_new_table_reader) {
+    unique_ptr<TableReader> table_reader_unique_ptr;
+    s = GetTableReader(
+        env_options, icomparator, fd, true /* sequential_mode */, readahead,
+        !for_compaction /* record stats */, nullptr, &table_reader_unique_ptr,
+        false /* skip_filters */, level,
+        true /* prefetch_index_and_filter_in_cache */, for_compaction);
+    if (s.ok()) {
+      table_reader = table_reader_unique_ptr.release();
+    }
+  } else {
+    table_reader = fd.table_reader;
+    if (table_reader == nullptr) {
+      s = FindTable(env_options, icomparator, fd, &handle,
+                    options.read_tier == kBlockCacheTier /* no_io */,
+                    !for_compaction /* record read_stats */, file_read_hist,
+                    skip_filters, level);
       if (s.ok()) {
-        table_reader = table_reader_unique_ptr.release();
-      }
-    } else {
-      table_reader = fd.table_reader;
-      if (table_reader == nullptr) {
-        s = FindTable(env_options, icomparator, fd, &handle,
-                      options.read_tier == kBlockCacheTier /* no_io */,
-                      !for_compaction /* record read_stats */, file_read_hist,
-                      skip_filters, level);
-        if (s.ok()) {
-          table_reader = GetTableReaderFromHandle(handle);
-        }
+        table_reader = GetTableReaderFromHandle(handle);
       }
     }
   }
   InternalIterator* result = nullptr;
   if (s.ok()) {
-    result =
-      table_reader->NewIterator(options, arena, &icomparator, skip_filters);
+    if (options.table_filter &&
+        !options.table_filter(*table_reader->GetTableProperties())) {
+      result = NewEmptyInternalIterator(arena);
+    } else {
+      result = table_reader->NewIterator(options, arena, skip_filters);
+    }
     if (create_new_table_reader) {
       assert(handle == nullptr);
       result->RegisterCleanup(&DeleteTableReader, table_reader, nullptr);
@@ -311,6 +315,7 @@ Status TableCache::Get(const ReadOptions& options,
 #ifndef ROCKSDB_LITE
   IterKey row_cache_key;
   std::string row_cache_entry_buffer;
+
   // Check row cache if enabled. Since row cache does not currently store
   // sequence numbers, we cannot use it if we need to fetch the sequence.
   if (ioptions_.row_cache && !get_context->NeedToReadSequence()) {
@@ -334,10 +339,26 @@ Status TableCache::Get(const ReadOptions& options,
 
     if (auto row_handle =
             ioptions_.row_cache->Lookup(row_cache_key.GetUserKey())) {
+      // Cleanable routine to release the cache entry
+      Cleanable value_pinner;
+      auto release_cache_entry_func = [](void* cache_to_clean,
+                                         void* cache_handle) {
+        ((Cache*)cache_to_clean)->Release((Cache::Handle*)cache_handle);
+      };
       auto found_row_cache_entry = static_cast<const std::string*>(
           ioptions_.row_cache->Value(row_handle));
-      replayGetContextLog(*found_row_cache_entry, user_key, get_context);
-      ioptions_.row_cache->Release(row_handle);
+      // If it comes here value is located on the cache.
+      // found_row_cache_entry points to the value on cache,
+      // and value_pinner has cleanup procedure for the cached entry.
+      // After replayGetContextLog() returns, get_context.pinnable_slice_
+      // will point to cache entry buffer (or a copy based on that) and
+      // cleanup routine under value_pinner will be delegated to
+      // get_context.pinnable_slice_. Cache entry is released when
+      // get_context.pinnable_slice_ is reset.
+      value_pinner.RegisterCleanup(release_cache_entry_func,
+                                   ioptions_.row_cache.get(), row_handle);
+      replayGetContextLog(*found_row_cache_entry, user_key, get_context,
+                          &value_pinner);
       RecordTick(ioptions_.statistics, ROW_CACHE_HIT);
       done = true;
     } else {

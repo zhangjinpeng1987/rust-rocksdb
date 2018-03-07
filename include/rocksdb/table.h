@@ -43,7 +43,7 @@ struct Options;
 using std::unique_ptr;
 
 enum ChecksumType : char {
-  kNoChecksum = 0x0,  // not yet supported. Will fail
+  kNoChecksum = 0x0,
   kCRC32c = 0x1,
   kxxHash = 0x2,
 };
@@ -87,9 +87,6 @@ struct BlockBasedTableOptions {
     // `Options.prefix_extractor` is provided.
     kHashSearch,
 
-    // TODO(myabandeh): this feature is in experimental phase and shall not be
-    // used in production; either remove the feature or remove this comment if
-    // it is ready to be used in production.
     // A two-level index implementation. Both levels are binary search indexes.
     kTwoLevelIndexSearch,
   };
@@ -158,10 +155,8 @@ struct BlockBasedTableOptions {
   // Note: currently this option requires kTwoLevelIndexSearch to be set as
   // well.
   // TODO(myabandeh): remove the note above once the limitation is lifted
-  // TODO(myabandeh): this feature is in experimental phase and shall not be
-  // used in production; either remove the feature or remove this comment if
-  // it is ready to be used in production.
-  // Use partitioned full filters for each SST file
+  // Use partitioned full filters for each SST file. This option is
+  // incompatibile with block-based filters.
   bool partition_filters = false;
 
   // Use delta encoding to compress keys in blocks.
@@ -466,6 +461,12 @@ class TableFactory {
   // Return a string that contains printable format of table configurations.
   // RocksDB prints configurations at DB Open().
   virtual std::string GetPrintableTableOptions() const = 0;
+
+  virtual Status GetOptionString(std::string* opt_string,
+                                 const std::string& delimiter) const {
+    return Status::NotSupported(
+        "The table factory doesn't implement GetOptionString().");
+  }
 
   // Returns the raw pointer of the table options that is used by this
   // TableFactory, or nullptr if this function is not supported.

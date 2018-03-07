@@ -42,13 +42,24 @@ SpecialEnv::SpecialEnv(Env* base)
   non_writable_count_ = 0;
   table_write_callback_ = nullptr;
 }
-
+#ifndef ROCKSDB_LITE
 ROT13BlockCipher rot13Cipher_(16);
+#endif  // ROCKSDB_LITE
 
 DBTestBase::DBTestBase(const std::string path)
     : mem_env_(!getenv("MEM_ENV") ? nullptr : new MockEnv(Env::Default())),
-      encrypted_env_(!getenv("ENCRYPTED_ENV") ? nullptr : NewEncryptedEnv(mem_env_ ? mem_env_ : Env::Default(), new CTREncryptionProvider(rot13Cipher_))),
-      env_(new SpecialEnv(encrypted_env_ ? encrypted_env_ : (mem_env_ ? mem_env_ : Env::Default()))),
+#ifndef ROCKSDB_LITE
+      encrypted_env_(
+          !getenv("ENCRYPTED_ENV")
+              ? nullptr
+              : NewEncryptedEnv(mem_env_ ? mem_env_ : Env::Default(),
+                                new CTREncryptionProvider(rot13Cipher_))),
+#else
+      encrypted_env_(nullptr),
+#endif  // ROCKSDB_LITE
+      env_(new SpecialEnv(encrypted_env_
+                              ? encrypted_env_
+                              : (mem_env_ ? mem_env_ : Env::Default()))),
       option_config_(kDefault) {
   env_->SetBackgroundThreads(1, Env::LOW);
   env_->SetBackgroundThreads(1, Env::HIGH);
@@ -277,12 +288,11 @@ Options DBTestBase::GetOptions(
   Options options = default_options;
   BlockBasedTableOptions table_options;
   bool set_block_based_table_factory = true;
-#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) &&  \
-  !defined(OS_AIX)
+#if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && \
+    !defined(OS_AIX)
   rocksdb::SyncPoint::GetInstance()->ClearCallBack(
       "NewRandomAccessFile:O_DIRECT");
-  rocksdb::SyncPoint::GetInstance()->ClearCallBack(
-      "NewWritableFile:O_DIRECT");
+  rocksdb::SyncPoint::GetInstance()->ClearCallBack("NewWritableFile:O_DIRECT");
 #endif
 
   bool can_allow_mmap = IsMemoryMappedAccessSupported();
@@ -455,7 +465,7 @@ Options DBTestBase::GetOptions(
       options.use_direct_io_for_flush_and_compaction = true;
       options.compaction_readahead_size = 2 * 1024 * 1024;
 #if !defined(OS_MACOSX) && !defined(OS_WIN) && !defined(OS_SOLARIS) && \
-    !defined(OS_AIX)
+    !defined(OS_AIX) && !defined(OS_OPENBSD)
       rocksdb::SyncPoint::GetInstance()->SetCallBack(
           "NewWritableFile:O_DIRECT", [&](void* arg) {
             int* val = static_cast<int*>(arg);
@@ -476,7 +486,7 @@ Options DBTestBase::GetOptions(
     }
     case kConcurrentWALWrites: {
       // This options optimize 2PC commit path
-      options.concurrent_prepare = true;
+      options.two_write_queues = true;
       options.manual_wal_flush = true;
       break;
     }
@@ -657,6 +667,10 @@ Status DBTestBase::SingleDelete(int cf, const std::string& k) {
   return db_->SingleDelete(WriteOptions(), handles_[cf], k);
 }
 
+bool DBTestBase::SetPreserveDeletesSequenceNumber(SequenceNumber sn) {
+  return db_->SetPreserveDeletesSequenceNumber(sn);
+}
+
 std::string DBTestBase::Get(const std::string& k, const Snapshot* snapshot) {
   ReadOptions options;
   options.verify_checksums = true;
@@ -684,6 +698,13 @@ std::string DBTestBase::Get(int cf, const std::string& k,
     result = s.ToString();
   }
   return result;
+}
+
+Status DBTestBase::Get(const std::string& k, PinnableSlice* v) {
+  ReadOptions options;
+  options.verify_checksums = true;
+  Status s = dbfull()->Get(options, dbfull()->DefaultColumnFamily(), k, v);
+  return s;
 }
 
 uint64_t DBTestBase::GetNumSnapshots() {
@@ -1152,7 +1173,7 @@ void DBTestBase::validateNumberOfEntries(int numValues, int cf) {
   int seq = numValues;
   while (iter->Valid()) {
     ParsedInternalKey ikey;
-    ikey.sequence = -1;
+    ikey.clear();
     ASSERT_EQ(ParseInternalKey(iter->key(), &ikey), true);
 
     // checks sequence number for updates

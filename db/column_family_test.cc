@@ -521,6 +521,7 @@ TEST_F(ColumnFamilyTest, DontReuseColumnFamilyID) {
   }
 }
 
+#ifndef ROCKSDB_LITE
 TEST_F(ColumnFamilyTest, CreateCFRaceWithGetAggProperty) {
   Open();
 
@@ -542,6 +543,7 @@ TEST_F(ColumnFamilyTest, CreateCFRaceWithGetAggProperty) {
 
   rocksdb::SyncPoint::GetInstance()->DisableProcessing();
 }
+#endif  // !ROCKSDB_LITE
 
 class FlushEmptyCFTestWithParam : public ColumnFamilyTest,
                                   public testing::WithParamInterface<bool> {
@@ -931,62 +933,62 @@ TEST_F(ColumnFamilyTest, FlushTest) {
 TEST_F(ColumnFamilyTest, LogDeletionTest) {
   db_options_.max_total_wal_size = std::numeric_limits<uint64_t>::max();
   column_family_options_.arena_block_size = 4 * 1024;
-  column_family_options_.write_buffer_size = 100000;  // 100KB
+  column_family_options_.write_buffer_size = 128000;  // 128KB
   Open();
   CreateColumnFamilies({"one", "two", "three", "four"});
   // Each bracket is one log file. if number is in (), it means
   // we don't need it anymore (it's been flushed)
   // []
   AssertCountLiveLogFiles(0);
-  PutRandomData(0, 1, 100);
+  PutRandomData(0, 1, 128);
   // [0]
-  PutRandomData(1, 1, 100);
+  PutRandomData(1, 1, 128);
   // [0, 1]
-  PutRandomData(1, 1000, 100);
+  PutRandomData(1, 1000, 128);
   WaitForFlush(1);
   // [0, (1)] [1]
   AssertCountLiveLogFiles(2);
-  PutRandomData(0, 1, 100);
+  PutRandomData(0, 1, 128);
   // [0, (1)] [0, 1]
   AssertCountLiveLogFiles(2);
-  PutRandomData(2, 1, 100);
+  PutRandomData(2, 1, 128);
   // [0, (1)] [0, 1, 2]
-  PutRandomData(2, 1000, 100);
+  PutRandomData(2, 1000, 128);
   WaitForFlush(2);
   // [0, (1)] [0, 1, (2)] [2]
   AssertCountLiveLogFiles(3);
-  PutRandomData(2, 1000, 100);
+  PutRandomData(2, 1000, 128);
   WaitForFlush(2);
   // [0, (1)] [0, 1, (2)] [(2)] [2]
   AssertCountLiveLogFiles(4);
-  PutRandomData(3, 1, 100);
+  PutRandomData(3, 1, 128);
   // [0, (1)] [0, 1, (2)] [(2)] [2, 3]
-  PutRandomData(1, 1, 100);
+  PutRandomData(1, 1, 128);
   // [0, (1)] [0, 1, (2)] [(2)] [1, 2, 3]
   AssertCountLiveLogFiles(4);
-  PutRandomData(1, 1000, 100);
+  PutRandomData(1, 1000, 128);
   WaitForFlush(1);
   // [0, (1)] [0, (1), (2)] [(2)] [(1), 2, 3] [1]
   AssertCountLiveLogFiles(5);
-  PutRandomData(0, 1000, 100);
+  PutRandomData(0, 1000, 128);
   WaitForFlush(0);
   // [(0), (1)] [(0), (1), (2)] [(2)] [(1), 2, 3] [1, (0)] [0]
   // delete obsolete logs -->
   // [(1), 2, 3] [1, (0)] [0]
   AssertCountLiveLogFiles(3);
-  PutRandomData(0, 1000, 100);
+  PutRandomData(0, 1000, 128);
   WaitForFlush(0);
   // [(1), 2, 3] [1, (0)], [(0)] [0]
   AssertCountLiveLogFiles(4);
-  PutRandomData(1, 1000, 100);
+  PutRandomData(1, 1000, 128);
   WaitForFlush(1);
   // [(1), 2, 3] [(1), (0)] [(0)] [0, (1)] [1]
   AssertCountLiveLogFiles(5);
-  PutRandomData(2, 1000, 100);
+  PutRandomData(2, 1000, 128);
   WaitForFlush(2);
   // [(1), (2), 3] [(1), (0)] [(0)] [0, (1)] [1, (2)], [2]
   AssertCountLiveLogFiles(6);
-  PutRandomData(3, 1000, 100);
+  PutRandomData(3, 1000, 128);
   WaitForFlush(3);
   // [(1), (2), (3)] [(1), (0)] [(0)] [0, (1)] [1, (2)], [2, (3)] [3]
   // delete obsolete logs -->

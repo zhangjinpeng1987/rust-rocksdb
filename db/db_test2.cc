@@ -11,6 +11,7 @@
 #include <functional>
 
 #include "db/db_test_util.h"
+#include "db/read_callback.h"
 #include "port/port.h"
 #include "port/stack_trace.h"
 #include "rocksdb/persistent_cache.h"
@@ -1026,6 +1027,7 @@ TEST_F(DBTest2, PresetCompressionDict) {
   const size_t kL0FileBytes = 128 << 10;
   const size_t kApproxPerBlockOverheadBytes = 50;
   const int kNumL0Files = 5;
+  const int kZstdTrainFactor = 16;
 
   Options options;
   options.env = CurrentOptions().env; // Make sure to use any custom env that the test is configured with.
@@ -1058,17 +1060,34 @@ TEST_F(DBTest2, PresetCompressionDict) {
   for (auto compression_type : compression_types) {
     options.compression = compression_type;
     size_t prev_out_bytes;
-    for (int i = 0; i < 2; ++i) {
+    for (int i = 0; i < 3; ++i) {
       // First iteration: compress without preset dictionary
       // Second iteration: compress with preset dictionary
-      // To make sure the compression dictionary was actually used, we verify
-      // the compressed size is smaller in the second iteration. Also in the
-      // second iteration, verify the data we get out is the same data we put
-      // in.
-      if (i) {
-        options.compression_opts.max_dict_bytes = kBlockSizeBytes;
-      } else {
-        options.compression_opts.max_dict_bytes = 0;
+      // Third iteration (zstd only): compress with zstd-trained dictionary
+      //
+      // To make sure the compression dictionary has the intended effect, we
+      // verify the compressed size is smaller in successive iterations. Also in
+      // the non-first iterations, verify the data we get out is the same data
+      // we put in.
+      switch (i) {
+        case 0:
+          options.compression_opts.max_dict_bytes = 0;
+          options.compression_opts.zstd_max_train_bytes = 0;
+          break;
+        case 1:
+          options.compression_opts.max_dict_bytes = kBlockSizeBytes;
+          options.compression_opts.zstd_max_train_bytes = 0;
+          break;
+        case 2:
+          if (compression_type != kZSTD) {
+            continue;
+          }
+          options.compression_opts.max_dict_bytes = kBlockSizeBytes;
+          options.compression_opts.zstd_max_train_bytes =
+              kZstdTrainFactor * kBlockSizeBytes;
+          break;
+        default:
+          assert(false);
       }
 
       options.statistics = rocksdb::CreateDBStatistics();
@@ -1133,7 +1152,7 @@ class CompactionCompressionListener : public EventListener {
     }
 
     if (db_options_->bottommost_compression != kDisableCompressionOption &&
-        ci.output_level == bottommost_level && ci.output_level >= 2) {
+        ci.output_level == bottommost_level) {
       ASSERT_EQ(ci.compression, db_options_->bottommost_compression);
     } else if (db_options_->compression_per_level.size() != 0) {
       ASSERT_EQ(ci.compression,
@@ -1918,19 +1937,19 @@ TEST_F(DBTest2, AutomaticCompactionOverlapManualCompaction) {
   ASSERT_OK(db_->CompactRange(cro, nullptr, nullptr));
 
   auto get_stat = [](std::string level_str, LevelStatType type,
-                     std::map<std::string, double> props) {
+                     std::map<std::string, std::string> props) {
     auto prop_str =
-        level_str + "." +
+        "compaction." + level_str + "." +
         InternalStats::compaction_level_stats.at(type).property_name.c_str();
     auto prop_item = props.find(prop_str);
-    return prop_item == props.end() ? 0 : prop_item->second;
+    return prop_item == props.end() ? 0 : std::stod(prop_item->second);
   };
 
   // Trivial move 2 files to L2
   ASSERT_EQ("0,0,2", FilesPerLevel());
   // Also test that the stats GetMapProperty API reporting the same result
   {
-    std::map<std::string, double> prop;
+    std::map<std::string, std::string> prop;
     ASSERT_TRUE(dbfull()->GetMapProperty("rocksdb.cfstats", &prop));
     ASSERT_EQ(0, get_stat("L0", LevelStatType::NUM_FILES, prop));
     ASSERT_EQ(0, get_stat("L1", LevelStatType::NUM_FILES, prop));
@@ -1966,7 +1985,7 @@ TEST_F(DBTest2, AutomaticCompactionOverlapManualCompaction) {
 
   // Test that the stats GetMapProperty API reporting 1 file in L2
   {
-    std::map<std::string, double> prop;
+    std::map<std::string, std::string> prop;
     ASSERT_TRUE(dbfull()->GetMapProperty("rocksdb.cfstats", &prop));
     ASSERT_EQ(1, get_stat("L2", LevelStatType::NUM_FILES, prop));
   }
@@ -2236,6 +2255,7 @@ TEST_F(DBTest2, LowPriWrite) {
   ASSERT_EQ(1, rate_limit_count.load());
 }
 
+#ifndef ROCKSDB_LITE
 TEST_F(DBTest2, RateLimitedCompactionReads) {
   // compaction input has 512KB data
   const int kNumKeysPerFile = 128;
@@ -2281,12 +2301,15 @@ TEST_F(DBTest2, RateLimitedCompactionReads) {
     // chose 1MB as the upper bound on the total bytes read.
     size_t rate_limited_bytes =
         options.rate_limiter->GetTotalBytesThrough(Env::IO_LOW);
-    ASSERT_GE(
-        rate_limited_bytes,
-        static_cast<size_t>(kNumKeysPerFile * kBytesPerKey * kNumL0Files));
+    // Include the explict prefetch of the footer in direct I/O case.
+    size_t direct_io_extra = use_direct_io ? 512 * 1024 : 0;
+    ASSERT_GE(rate_limited_bytes,
+              static_cast<size_t>(kNumKeysPerFile * kBytesPerKey * kNumL0Files +
+                                  direct_io_extra));
     ASSERT_LT(
         rate_limited_bytes,
-        static_cast<size_t>(2 * kNumKeysPerFile * kBytesPerKey * kNumL0Files));
+        static_cast<size_t>(2 * kNumKeysPerFile * kBytesPerKey * kNumL0Files +
+                            direct_io_extra));
 
     Iterator* iter = db_->NewIterator(ReadOptions());
     for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
@@ -2297,6 +2320,113 @@ TEST_F(DBTest2, RateLimitedCompactionReads) {
     ASSERT_EQ(rate_limited_bytes,
               static_cast<size_t>(
                   options.rate_limiter->GetTotalBytesThrough(Env::IO_LOW)));
+  }
+}
+#endif  // ROCKSDB_LITE
+
+// Make sure DB can be reopen with reduced number of levels, given no file
+// is on levels higher than the new num_levels.
+TEST_F(DBTest2, ReduceLevel) {
+  Options options;
+  options.disable_auto_compactions = true;
+  options.num_levels = 7;
+  Reopen(options);
+  Put("foo", "bar");
+  Flush();
+  MoveFilesToLevel(6);
+#ifndef ROCKSDB_LITE
+  ASSERT_EQ("0,0,0,0,0,0,1", FilesPerLevel());
+#endif  // !ROCKSDB_LITE
+  CompactRangeOptions compact_options;
+  compact_options.change_level = true;
+  compact_options.target_level = 1;
+  dbfull()->CompactRange(compact_options, nullptr, nullptr);
+#ifndef ROCKSDB_LITE
+  ASSERT_EQ("0,1", FilesPerLevel());
+#endif  // !ROCKSDB_LITE
+  options.num_levels = 3;
+  Reopen(options);
+#ifndef ROCKSDB_LITE
+  ASSERT_EQ("0,1", FilesPerLevel());
+#endif  // !ROCKSDB_LITE
+}
+
+// Test that ReadCallback is actually used in both memtbale and sst tables
+TEST_F(DBTest2, ReadCallbackTest) {
+  Options options;
+  options.disable_auto_compactions = true;
+  options.num_levels = 7;
+  Reopen(options);
+  std::vector<const Snapshot*> snapshots;
+  // Try to create a db with multiple layers and a memtable
+  const std::string key = "foo";
+  const std::string value = "bar";
+  // This test assumes that the seq start with 1 and increased by 1 after each
+  // write batch of size 1. If that behavior changes, the test needs to be
+  // updated as well.
+  // TODO(myabandeh): update this test to use the seq number that is returned by
+  // the DB instead of assuming what seq the DB used.
+  int i = 1;
+  for (; i < 10; i++) {
+    Put(key, value + std::to_string(i));
+    // Take a snapshot to avoid the value being removed during compaction
+    auto snapshot = dbfull()->GetSnapshot();
+    snapshots.push_back(snapshot);
+  }
+  Flush();
+  for (; i < 20; i++) {
+    Put(key, value + std::to_string(i));
+    // Take a snapshot to avoid the value being removed during compaction
+    auto snapshot = dbfull()->GetSnapshot();
+    snapshots.push_back(snapshot);
+  }
+  Flush();
+  MoveFilesToLevel(6);
+#ifndef ROCKSDB_LITE
+  ASSERT_EQ("0,0,0,0,0,0,2", FilesPerLevel());
+#endif  // !ROCKSDB_LITE
+  for (; i < 30; i++) {
+    Put(key, value + std::to_string(i));
+    auto snapshot = dbfull()->GetSnapshot();
+    snapshots.push_back(snapshot);
+  }
+  Flush();
+#ifndef ROCKSDB_LITE
+  ASSERT_EQ("1,0,0,0,0,0,2", FilesPerLevel());
+#endif  // !ROCKSDB_LITE
+  // And also add some values to the memtable
+  for (; i < 40; i++) {
+    Put(key, value + std::to_string(i));
+    auto snapshot = dbfull()->GetSnapshot();
+    snapshots.push_back(snapshot);
+  }
+
+  class TestReadCallback : public ReadCallback {
+   public:
+    explicit TestReadCallback(SequenceNumber snapshot) : snapshot_(snapshot) {}
+    virtual bool IsCommitted(SequenceNumber seq) override {
+      return seq <= snapshot_;
+    }
+
+   private:
+    SequenceNumber snapshot_;
+  };
+
+  for (int seq = 1; seq < i; seq++) {
+    PinnableSlice pinnable_val;
+    ReadOptions roptions;
+    TestReadCallback callback(seq);
+    bool dont_care = true;
+    Status s = dbfull()->GetImpl(roptions, dbfull()->DefaultColumnFamily(), key,
+                                 &pinnable_val, &dont_care, &callback);
+    ASSERT_TRUE(s.ok());
+    // Assuming that after each Put the DB increased seq by one, the value and
+    // seq number must be equal since we also inc value by 1 after each Put.
+    ASSERT_EQ(value + std::to_string(seq), pinnable_val.ToString());
+  }
+
+  for (auto snapshot : snapshots) {
+    dbfull()->ReleaseSnapshot(snapshot);
   }
 }
 

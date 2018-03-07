@@ -41,6 +41,7 @@ static char dbname[200];
 static char sstfilename[200];
 static char dbbackupname[200];
 static char dbcheckpointname[200];
+static char dbpathname[200];
 
 static void StartPhase(const char* name) {
   fprintf(stderr, "=== Test %s\n", name);
@@ -333,6 +334,20 @@ static void CheckTxnGet(
         Free(&val);
 }
 
+static void CheckTxnGetCF(rocksdb_transaction_t* txn,
+                          const rocksdb_readoptions_t* options,
+                          rocksdb_column_family_handle_t* column_family,
+                          const char* key, const char* expected) {
+  char* err = NULL;
+  size_t val_len;
+  char* val;
+  val = rocksdb_transaction_get_cf(txn, options, column_family, key,
+                                   strlen(key), &val_len, &err);
+  CheckNoError(err);
+  CheckEqual(expected, val, val_len);
+  Free(&val);
+}
+
 static void CheckTxnDBGet(
         rocksdb_transactiondb_t* txn_db,
         const rocksdb_readoptions_t* options,
@@ -347,10 +362,25 @@ static void CheckTxnDBGet(
         Free(&val);
 }
 
+static void CheckTxnDBGetCF(rocksdb_transactiondb_t* txn_db,
+                            const rocksdb_readoptions_t* options,
+                            rocksdb_column_family_handle_t* column_family,
+                            const char* key, const char* expected) {
+  char* err = NULL;
+  size_t val_len;
+  char* val;
+  val = rocksdb_transactiondb_get_cf(txn_db, options, column_family, key,
+                                     strlen(key), &val_len, &err);
+  CheckNoError(err);
+  CheckEqual(expected, val, val_len);
+  Free(&val);
+}
+
 int main(int argc, char** argv) {
   rocksdb_t* db;
   rocksdb_comparator_t* cmp;
   rocksdb_cache_t* cache;
+  rocksdb_dbpath_t *dbpath;
   rocksdb_env_t* env;
   rocksdb_options_t* options;
   rocksdb_compactoptions_t* coptions;
@@ -362,6 +392,8 @@ int main(int argc, char** argv) {
   rocksdb_transactiondb_options_t* txn_db_options;
   rocksdb_transaction_t* txn;
   rocksdb_transaction_options_t* txn_options;
+  rocksdb_optimistictransactiondb_t* otxn_db;
+  rocksdb_optimistictransaction_options_t* otxn_options;
   char* err = NULL;
   int run = -1;
 
@@ -385,8 +417,14 @@ int main(int argc, char** argv) {
            GetTempDir(),
            ((int)geteuid()));
 
+  snprintf(dbpathname, sizeof(dbpathname),
+           "%s/rocksdb_c_test-%d-dbpath",
+           GetTempDir(),
+           ((int) geteuid()));
+
   StartPhase("create_objects");
   cmp = rocksdb_comparator_create(NULL, CmpDestroy, CmpCompare, CmpName);
+  dbpath = rocksdb_dbpath_create(dbpathname, 1024 * 1024);
   env = rocksdb_create_default_env();
   cache = rocksdb_cache_create_lru(100000);
 
@@ -1357,6 +1395,18 @@ int main(int argc, char** argv) {
     CheckNoError(err);
     CheckTxnDBGet(txn_db, roptions, "foo", NULL);
 
+    // write batch into TransactionDB
+    rocksdb_writebatch_t* wb = rocksdb_writebatch_create();
+    rocksdb_writebatch_put(wb, "foo", 3, "a", 1);
+    rocksdb_writebatch_clear(wb);
+    rocksdb_writebatch_put(wb, "bar", 3, "b", 1);
+    rocksdb_writebatch_put(wb, "box", 3, "c", 1);
+    rocksdb_writebatch_delete(wb, "bar", 3);
+    rocksdb_transactiondb_write(txn_db, woptions, wb, &err);
+    rocksdb_writebatch_destroy(wb);
+    CheckTxnDBGet(txn_db, roptions, "box", "c");
+    CheckNoError(err);
+
     // begin a transaction
     txn = rocksdb_transaction_begin(txn_db, woptions, txn_options, NULL);
     // put
@@ -1413,6 +1463,42 @@ int main(int argc, char** argv) {
     CheckNoError(err);
     CheckTxnDBGet(txn_db, roptions, "bar", NULL);
 
+    // save point
+    rocksdb_transaction_put(txn, "foo1", 4, "hi1", 3, &err);
+    rocksdb_transaction_set_savepoint(txn);
+    CheckTxnGet(txn, roptions, "foo1", "hi1");
+    rocksdb_transaction_put(txn, "foo2", 4, "hi2", 3, &err);
+    CheckTxnGet(txn, roptions, "foo2", "hi2");
+
+    // rollback to savepoint
+    rocksdb_transaction_rollback_to_savepoint(txn, &err);
+    CheckNoError(err);
+    CheckTxnGet(txn, roptions, "foo2", NULL);
+    CheckTxnGet(txn, roptions, "foo1", "hi1");
+    CheckTxnDBGet(txn_db, roptions, "foo1", NULL);
+    CheckTxnDBGet(txn_db, roptions, "foo2", NULL);
+    rocksdb_transaction_commit(txn, &err);
+    CheckNoError(err);
+    CheckTxnDBGet(txn_db, roptions, "foo1", "hi1");
+    CheckTxnDBGet(txn_db, roptions, "foo2", NULL);
+
+    // Column families.
+    rocksdb_column_family_handle_t* cfh;
+    cfh = rocksdb_transactiondb_create_column_family(txn_db, options,
+                                                     "txn_db_cf", &err);
+    CheckNoError(err);
+
+    rocksdb_transactiondb_put_cf(txn_db, woptions, cfh, "cf_foo", 6, "cf_hello",
+                                 8, &err);
+    CheckNoError(err);
+    CheckTxnDBGetCF(txn_db, roptions, cfh, "cf_foo", "cf_hello");
+
+    rocksdb_transactiondb_delete_cf(txn_db, woptions, cfh, "cf_foo", 6, &err);
+    CheckNoError(err);
+    CheckTxnDBGetCF(txn_db, roptions, cfh, "cf_foo", NULL);
+
+    rocksdb_column_family_handle_destroy(cfh);
+
     // close and destroy
     rocksdb_transaction_destroy(txn);
     rocksdb_transactiondb_close(txn_db);
@@ -1420,6 +1506,105 @@ int main(int argc, char** argv) {
     CheckNoError(err);
     rocksdb_transaction_options_destroy(txn_options);
     rocksdb_transactiondb_options_destroy(txn_db_options);
+  }
+
+  StartPhase("optimistic_transactions");
+  {
+    rocksdb_options_t* db_options = rocksdb_options_create();
+    rocksdb_options_set_create_if_missing(db_options, 1);
+    rocksdb_options_set_allow_concurrent_memtable_write(db_options, 1);
+    otxn_db = rocksdb_optimistictransactiondb_open(db_options, dbname, &err);
+    otxn_options = rocksdb_optimistictransaction_options_create();
+    rocksdb_transaction_t* txn1 = rocksdb_optimistictransaction_begin(
+        otxn_db, woptions, otxn_options, NULL);
+    rocksdb_transaction_t* txn2 = rocksdb_optimistictransaction_begin(
+        otxn_db, woptions, otxn_options, NULL);
+    rocksdb_transaction_put(txn1, "key", 3, "value", 5, &err);
+    CheckNoError(err);
+    rocksdb_transaction_put(txn2, "key1", 4, "value1", 6, &err);
+    CheckNoError(err);
+    CheckTxnGet(txn1, roptions, "key", "value");
+    rocksdb_transaction_commit(txn1, &err);
+    CheckNoError(err);
+    rocksdb_transaction_commit(txn2, &err);
+    CheckNoError(err);
+    rocksdb_transaction_destroy(txn1);
+    rocksdb_transaction_destroy(txn2);
+
+    // Check column family
+    db = rocksdb_optimistictransactiondb_get_base_db(otxn_db);
+    rocksdb_put(db, woptions, "key", 3, "value", 5, &err);
+    CheckNoError(err);
+    rocksdb_column_family_handle_t *cfh1, *cfh2;
+    cfh1 = rocksdb_create_column_family(db, db_options, "txn_db_cf1", &err);
+    cfh2 = rocksdb_create_column_family(db, db_options, "txn_db_cf2", &err);
+    txn = rocksdb_optimistictransaction_begin(otxn_db, woptions, otxn_options,
+                                              NULL);
+    rocksdb_transaction_put_cf(txn, cfh1, "key_cf1", 7, "val_cf1", 7, &err);
+    CheckNoError(err);
+    rocksdb_transaction_put_cf(txn, cfh2, "key_cf2", 7, "val_cf2", 7, &err);
+    CheckNoError(err);
+    rocksdb_transaction_commit(txn, &err);
+    CheckNoError(err);
+    txn = rocksdb_optimistictransaction_begin(otxn_db, woptions, otxn_options,
+                                              txn);
+    CheckGetCF(db, roptions, cfh1, "key_cf1", "val_cf1");
+    CheckTxnGetCF(txn, roptions, cfh1, "key_cf1", "val_cf1");
+
+    // Check iterator with column family
+    rocksdb_transaction_put_cf(txn, cfh1, "key1_cf", 7, "val1_cf", 7, &err);
+    CheckNoError(err);
+    rocksdb_iterator_t* iter =
+        rocksdb_transaction_create_iterator_cf(txn, roptions, cfh1);
+    CheckCondition(!rocksdb_iter_valid(iter));
+    rocksdb_iter_seek_to_first(iter);
+    CheckCondition(rocksdb_iter_valid(iter));
+    CheckIter(iter, "key1_cf", "val1_cf");
+    rocksdb_iter_get_error(iter, &err);
+    CheckNoError(err);
+    rocksdb_iter_destroy(iter);
+
+    rocksdb_transaction_destroy(txn);
+    rocksdb_column_family_handle_destroy(cfh1);
+    rocksdb_column_family_handle_destroy(cfh2);
+    rocksdb_optimistictransactiondb_close_base_db(db);
+    rocksdb_optimistictransactiondb_close(otxn_db);
+
+    // Check open optimistic transaction db with column families
+    size_t cf_len;
+    char** column_fams =
+        rocksdb_list_column_families(db_options, dbname, &cf_len, &err);
+    CheckNoError(err);
+    CheckEqual("default", column_fams[0], 7);
+    CheckEqual("txn_db_cf1", column_fams[1], 10);
+    CheckEqual("txn_db_cf2", column_fams[2], 10);
+    CheckCondition(cf_len == 3);
+    rocksdb_list_column_families_destroy(column_fams, cf_len);
+
+    const char* cf_names[3] = {"default", "txn_db_cf1", "txn_db_cf2"};
+    rocksdb_options_t* cf_options = rocksdb_options_create();
+    const rocksdb_options_t* cf_opts[3] = {cf_options, cf_options, cf_options};
+
+    rocksdb_options_set_error_if_exists(cf_options, 0);
+    rocksdb_column_family_handle_t* cf_handles[3];
+    otxn_db = rocksdb_optimistictransactiondb_open_column_families(
+        db_options, dbname, 3, cf_names, cf_opts, cf_handles, &err);
+    CheckNoError(err);
+    rocksdb_transaction_t* txn_cf = rocksdb_optimistictransaction_begin(
+        otxn_db, woptions, otxn_options, NULL);
+    CheckTxnGetCF(txn_cf, roptions, cf_handles[0], "key", "value");
+    CheckTxnGetCF(txn_cf, roptions, cf_handles[1], "key_cf1", "val_cf1");
+    CheckTxnGetCF(txn_cf, roptions, cf_handles[2], "key_cf2", "val_cf2");
+    rocksdb_transaction_destroy(txn_cf);
+    rocksdb_options_destroy(cf_options);
+    rocksdb_column_family_handle_destroy(cf_handles[0]);
+    rocksdb_column_family_handle_destroy(cf_handles[1]);
+    rocksdb_column_family_handle_destroy(cf_handles[2]);
+    rocksdb_optimistictransactiondb_close(otxn_db);
+    rocksdb_destroy_db(db_options, dbname, &err);
+    rocksdb_options_destroy(db_options);
+    rocksdb_optimistictransaction_options_destroy(otxn_options);
+    CheckNoError(err);
   }
 
   // Simple sanity check that setting memtable rep works.
@@ -1440,6 +1625,18 @@ int main(int argc, char** argv) {
     CheckNoError(err);
   }
 
+  // Simple sanity check that options setting db_paths work.
+  StartPhase("open_db_paths");
+  {
+    rocksdb_close(db);
+    rocksdb_destroy_db(options, dbname, &err);
+
+    const rocksdb_dbpath_t* paths[1] = {dbpath};
+    rocksdb_options_set_db_paths(options, paths, 1);
+    db = rocksdb_open(options, dbname, &err);
+    CheckNoError(err);
+  }
+  
   StartPhase("cleanup");
   rocksdb_close(db);
   rocksdb_options_destroy(options);
@@ -1449,6 +1646,7 @@ int main(int argc, char** argv) {
   rocksdb_compactoptions_destroy(coptions);
   rocksdb_cache_destroy(cache);
   rocksdb_comparator_destroy(cmp);
+  rocksdb_dbpath_destroy(dbpath);
   rocksdb_env_destroy(env);
 
   fprintf(stderr, "PASS\n");

@@ -156,6 +156,8 @@ class FakeCompaction : public CompactionIterator::CompactionProxy {
   }
   virtual bool allow_ingest_behind() const { return false; }
 
+  virtual bool preserve_deletes() const {return false; }
+
   bool key_not_exists_beyond_output_level = false;
 };
 
@@ -181,6 +183,8 @@ class CompactionIteratorTest : public testing::Test {
       compaction_proxy_ = new FakeCompaction();
       compaction.reset(compaction_proxy_);
     }
+    // TODO(yiwu) add a mock snapshot checker and add test for it.
+    SnapshotChecker* snapshot_checker = nullptr;
 
     merge_helper_.reset(new MergeHelper(Env::Default(), cmp_, merge_op, filter,
                                         nullptr, false, 0, 0, nullptr,
@@ -189,8 +193,9 @@ class CompactionIteratorTest : public testing::Test {
     iter_->SeekToFirst();
     c_iter_.reset(new CompactionIterator(
         iter_.get(), cmp_, merge_helper_.get(), last_sequence, &snapshots_,
-        kMaxSequenceNumber, Env::Default(), false, range_del_agg_.get(),
-        std::move(compaction), filter, nullptr, &shutting_down_));
+        kMaxSequenceNumber, snapshot_checker, Env::Default(), false,
+        range_del_agg_.get(), std::move(compaction), filter, nullptr,
+        &shutting_down_));
   }
 
   void AddSnapshot(SequenceNumber snapshot) { snapshots_.push_back(snapshot); }
@@ -453,6 +458,111 @@ TEST_F(CompactionIteratorTest, ShuttingDownInMerge) {
 
   // Check that filter was never called again.
   EXPECT_EQ(2, filter.last_seen.load());
+}
+
+TEST_F(CompactionIteratorTest, SingleMergeOperand) {
+  class Filter : public CompactionFilter {
+    virtual Decision FilterV2(int level, const Slice& key, ValueType t,
+                              const Slice& existing_value,
+                              std::string* new_value,
+                              std::string* skip_until) const override {
+      std::string k = key.ToString();
+      std::string v = existing_value.ToString();
+
+      // See InitIterators() call below for the sequence of keys and their
+      // filtering decisions. Here we closely assert that compaction filter is
+      // called with the expected keys and only them, and with the right values.
+      if (k == "a") {
+        EXPECT_EQ(ValueType::kMergeOperand, t);
+        EXPECT_EQ("av1", v);
+        return Decision::kKeep;
+      } else if (k == "b") {
+        EXPECT_EQ(ValueType::kMergeOperand, t);
+        return Decision::kKeep;
+      } else if (k == "c") {
+        return Decision::kKeep;
+      }
+
+      ADD_FAILURE();
+      return Decision::kKeep;
+    }
+
+    const char* Name() const override {
+      return "CompactionIteratorTest.SingleMergeOperand::Filter";
+    }
+  };
+
+  class SingleMergeOp : public MergeOperator {
+   public:
+    bool FullMergeV2(const MergeOperationInput& merge_in,
+                     MergeOperationOutput* merge_out) const override {
+      // See InitIterators() call below for why "c" is the only key for which
+      // FullMergeV2 should be called.
+      EXPECT_EQ("c", merge_in.key.ToString());
+
+      std::string temp_value;
+      if (merge_in.existing_value != nullptr) {
+        temp_value = merge_in.existing_value->ToString();
+      }
+
+      for (auto& operand : merge_in.operand_list) {
+        temp_value.append(operand.ToString());
+      }
+      merge_out->new_value = temp_value;
+
+      return true;
+    }
+
+    bool PartialMergeMulti(const Slice& key,
+                           const std::deque<Slice>& operand_list,
+                           std::string* new_value,
+                           Logger* logger) const override {
+      std::string string_key = key.ToString();
+      EXPECT_TRUE(string_key == "a" || string_key == "b");
+
+      if (string_key == "a") {
+        EXPECT_EQ(1, operand_list.size());
+      } else if (string_key == "b") {
+        EXPECT_EQ(2, operand_list.size());
+      }
+
+      std::string temp_value;
+      for (auto& operand : operand_list) {
+        temp_value.append(operand.ToString());
+      }
+      swap(temp_value, *new_value);
+
+      return true;
+    }
+
+    const char* Name() const override {
+      return "CompactionIteratorTest SingleMergeOp";
+    }
+
+    bool AllowSingleOperand() const override { return true; }
+  };
+
+  SingleMergeOp merge_op;
+  Filter filter;
+  InitIterators(
+      // a should invoke PartialMergeMulti with a single merge operand.
+      {test::KeyStr("a", 50, kTypeMerge),
+       // b should invoke PartialMergeMulti with two operands.
+       test::KeyStr("b", 70, kTypeMerge), test::KeyStr("b", 60, kTypeMerge),
+       // c should invoke FullMerge due to kTypeValue at the beginning.
+       test::KeyStr("c", 90, kTypeMerge), test::KeyStr("c", 80, kTypeValue)},
+      {"av1", "bv2", "bv1", "cv2", "cv1"}, {}, {}, kMaxSequenceNumber,
+      &merge_op, &filter);
+
+  c_iter_->SeekToFirst();
+  ASSERT_TRUE(c_iter_->Valid());
+  ASSERT_EQ(test::KeyStr("a", 50, kTypeMerge), c_iter_->key().ToString());
+  ASSERT_EQ("av1", c_iter_->value().ToString());
+  c_iter_->Next();
+  ASSERT_TRUE(c_iter_->Valid());
+  ASSERT_EQ("bv1bv2", c_iter_->value().ToString());
+  c_iter_->Next();
+  ASSERT_EQ("cv1cv2", c_iter_->value().ToString());
 }
 
 }  // namespace rocksdb

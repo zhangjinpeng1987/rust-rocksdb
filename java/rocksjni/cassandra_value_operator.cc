@@ -1,9 +1,7 @@
-// Copyright (c) 2017-present, Facebook, Inc.  All rights reserved.
+//  Copyright (c) 2017-present, Facebook, Inc.  All rights reserved.
 //  This source code is licensed under both the GPLv2 (found in the
 //  COPYING file in the root directory) and Apache 2.0 License
 //  (found in the LICENSE.Apache file in the root directory).
-// This source code is also licensed under the GPLv2 license found in the
-// COPYING file in the root directory of this source tree.
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -20,18 +18,20 @@
 #include "rocksdb/table.h"
 #include "rocksdb/slice_transform.h"
 #include "rocksdb/merge_operator.h"
-#include "utilities/merge_operators/cassandra/merge_operator.h"
+#include "utilities/cassandra/merge_operator.h"
 
 /*
  * Class:     org_rocksdb_CassandraValueMergeOperator
  * Method:    newSharedCassandraValueMergeOperator
- * Signature: ()J
+ * Signature: (II)J
  */
-jlong Java_org_rocksdb_CassandraValueMergeOperator_newSharedCassandraValueMergeOperator
-(JNIEnv* env, jclass jclazz) {
-  auto* sptr_string_append_op = new std::shared_ptr<rocksdb::MergeOperator>(
-    rocksdb::CassandraValueMergeOperator::CreateSharedInstance());
-  return reinterpret_cast<jlong>(sptr_string_append_op);
+jlong Java_org_rocksdb_CassandraValueMergeOperator_newSharedCassandraValueMergeOperator(
+    JNIEnv* env, jclass jclazz, jint gcGracePeriodInSeconds,
+    jint operands_limit) {
+  auto* op = new std::shared_ptr<rocksdb::MergeOperator>(
+      new rocksdb::cassandra::CassandraValueMergeOperator(
+          gcGracePeriodInSeconds, operands_limit));
+  return reinterpret_cast<jlong>(op);
 }
 
 /*
@@ -41,7 +41,7 @@ jlong Java_org_rocksdb_CassandraValueMergeOperator_newSharedCassandraValueMergeO
  */
 void Java_org_rocksdb_CassandraValueMergeOperator_disposeInternal(
     JNIEnv* env, jobject jobj, jlong jhandle) {
-  auto* sptr_string_append_op =
-      reinterpret_cast<std::shared_ptr<rocksdb::MergeOperator>* >(jhandle);
-  delete sptr_string_append_op;  // delete std::shared_ptr
+  auto* op =
+      reinterpret_cast<std::shared_ptr<rocksdb::MergeOperator>*>(jhandle);
+  delete op;
 }

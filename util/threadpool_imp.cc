@@ -123,11 +123,11 @@ private:
 
 inline
 ThreadPoolImpl::Impl::Impl()
-    : 
+    :
       low_io_priority_(false),
       priority_(Env::LOW),
       env_(nullptr),
-      total_threads_limit_(1),
+      total_threads_limit_(0),
       queue_len_(),
       exit_all_threads_(false),
       wait_for_jobs_to_complete_(false),
@@ -147,6 +147,9 @@ void ThreadPoolImpl::Impl::JoinThreads(bool wait_for_jobs_to_complete) {
 
   wait_for_jobs_to_complete_ = wait_for_jobs_to_complete;
   exit_all_threads_ = true;
+  // prevent threads from being recreated right after they're joined, in case
+  // the user is concurrently submitting jobs.
+  total_threads_limit_ = 0;
 
   lock.unlock();
 
@@ -372,7 +375,7 @@ int ThreadPoolImpl::Impl::UnSchedule(void* arg) {
   return count;
 }
 
-ThreadPoolImpl::ThreadPoolImpl() : 
+ThreadPoolImpl::ThreadPoolImpl() :
   impl_(new Impl()) {
 }
 

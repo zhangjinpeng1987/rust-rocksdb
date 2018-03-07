@@ -53,6 +53,7 @@ struct ExternalSstFileInfo;
 class WriteBatch;
 class Env;
 class EventListener;
+enum EntryType;
 
 using std::unique_ptr;
 
@@ -97,6 +98,14 @@ struct Range {
 
   Range() { }
   Range(const Slice& s, const Slice& l) : start(s), limit(l) { }
+};
+
+struct RangePtr {
+  const Slice* start;
+  const Slice* limit;
+
+  RangePtr() : start(nullptr), limit(nullptr) { }
+  RangePtr(const Slice* s, const Slice* l) : start(s), limit(l) { }
 };
 
 // A collections of table properties objects, where
@@ -582,6 +591,12 @@ class DB {
 
     //  "rocksdb.is-write-stopped" - Return 1 if write has been stopped.
     static const std::string kIsWriteStopped;
+
+    //  "rocksdb.estimate-oldest-key-time" - returns an estimation of
+    //      oldest key timestamp in the DB. Currently only available for
+    //      FIFO compaction with
+    //      compaction_options_fifo.allow_compaction = false.
+    static const std::string kEstimateOldestKeyTime;
   };
 #endif /* ROCKSDB_LITE */
 
@@ -596,9 +611,9 @@ class DB {
   }
   virtual bool GetMapProperty(ColumnFamilyHandle* column_family,
                               const Slice& property,
-                              std::map<std::string, double>* value) = 0;
+                              std::map<std::string, std::string>* value) = 0;
   virtual bool GetMapProperty(const Slice& property,
-                              std::map<std::string, double>* value) {
+                              std::map<std::string, std::string>* value) {
     return GetMapProperty(DefaultColumnFamily(), property, value);
   }
 
@@ -632,6 +647,7 @@ class DB {
   //  "rocksdb.num-running-flushes"
   //  "rocksdb.actual-delayed-write-rate"
   //  "rocksdb.is-write-stopped"
+  //  "rocksdb.estimate-oldest-key-time"
   virtual bool GetIntProperty(ColumnFamilyHandle* column_family,
                               const Slice& property, uint64_t* value) = 0;
   virtual bool GetIntProperty(const Slice& property, uint64_t* value) {
@@ -867,6 +883,14 @@ class DB {
   // The sequence number of the most recent transaction.
   virtual SequenceNumber GetLatestSequenceNumber() const = 0;
 
+  // Instructs DB to preserve deletes with sequence numbers >= passed seqnum.
+  // Has no effect if DBOptions.preserve_deletes is set to false.
+  // This function assumes that user calls this function with monotonically
+  // increasing seqnums (otherwise we can't guarantee that a particular delete
+  // hasn't been already processed); returns true if the value was successfully
+  // updated, false if user attempted to call if with seqnum <= current value.
+  virtual bool SetPreserveDeletesSequenceNumber(SequenceNumber seqnum) = 0;
+
 #ifndef ROCKSDB_LITE
 
   // Prevent file deletions. Compactions will continue to occur,
@@ -908,6 +932,7 @@ class DB {
   // Retrieve the sorted list of all wal files with earliest file first
   virtual Status GetSortedWalFiles(VectorLogPtr& files) = 0;
 
+  // Note: this API is not yet consistent with WritePrepared transactions.
   // Sets iter to an iterator that is positioned at a write-batch containing
   // seq_number. If the sequence number is non existent, it returns an iterator
   // at the first available seq_no after the requested seq_no
@@ -975,6 +1000,8 @@ class DB {
       const IngestExternalFileOptions& options) {
     return IngestExternalFile(DefaultColumnFamily(), external_files, options);
   }
+
+  virtual Status VerifyChecksum() = 0;
 
   // AddFile() is deprecated, please use IngestExternalFile()
   ROCKSDB_DEPRECATED_FUNC virtual Status AddFile(
@@ -1097,6 +1124,17 @@ class DB {
   virtual Status GetPropertiesOfTablesInRange(
       ColumnFamilyHandle* column_family, const Range* range, std::size_t n,
       TablePropertiesCollection* props) = 0;
+
+  virtual Status SuggestCompactRange(ColumnFamilyHandle* column_family,
+                                     const Slice* begin, const Slice* end) {
+    return Status::NotSupported("SuggestCompactRange() is not implemented.");
+  }
+
+  virtual Status PromoteL0(ColumnFamilyHandle* column_family,
+                           int target_level) {
+    return Status::NotSupported("PromoteL0() is not implemented.");
+  }
+
 #endif  // ROCKSDB_LITE
 
   // Needed for StackableDB
