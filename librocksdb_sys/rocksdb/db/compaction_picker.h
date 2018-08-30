@@ -269,10 +269,10 @@ class NullCompactionPicker : public CompactionPicker {
   virtual ~NullCompactionPicker() {}
 
   // Always return "nullptr"
-  Compaction* PickCompaction(const std::string& cf_name,
-                             const MutableCFOptions& mutable_cf_options,
-                             VersionStorageInfo* vstorage,
-                             LogBuffer* log_buffer) override {
+  Compaction* PickCompaction(const std::string& /*cf_name*/,
+                             const MutableCFOptions& /*mutable_cf_options*/,
+                             VersionStorageInfo* /*vstorage*/,
+                             LogBuffer* /*log_buffer*/) override {
     return nullptr;
   }
 
@@ -292,7 +292,7 @@ class NullCompactionPicker : public CompactionPicker {
 
   // Always returns false.
   virtual bool NeedsCompaction(
-      const VersionStorageInfo* vstorage) const override {
+      const VersionStorageInfo* /*vstorage*/) const override {
     return false;
   }
 };

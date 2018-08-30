@@ -115,7 +115,7 @@ class FilterBlockReader {
     return error_msg;
   }
 
-  virtual void CacheDependencies(bool pin) {}
+  virtual void CacheDependencies(bool /*pin*/) {}
 
  protected:
   bool whole_key_filtering_;
