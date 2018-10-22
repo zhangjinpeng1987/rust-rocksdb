@@ -726,6 +726,13 @@ void DBIter::PrevInternal() {
       return;
     }
 
+    if (iterate_upper_bound_ != nullptr &&
+        user_comparator_->Compare(saved_key_.GetUserKey(),
+                                  *iterate_upper_bound_) > 0) {
+      // Internal key exceed upper bound in PrevIternal.
+      assert(0);
+    }
+
     if (FindValueForCurrentKey()) {
       if (!iter_->Valid()) {
         return;
