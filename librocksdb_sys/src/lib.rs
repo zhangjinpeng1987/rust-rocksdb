@@ -188,6 +188,18 @@ pub enum CompactionReason {
     ManualCompaction,
     // DB::SuggestCompactRange() marked files for compaction
     FilesMarkedForCompaction,
+    // [Level] Automatic compaction within bottommost level to cleanup duplicate
+    // versions of same user key, usually due to a released snapshot.
+    BottommostFiles,
+    // Compaction based on TTL
+    Ttl,
+    // According to the comments in flush_job.cc, RocksDB treats flush as
+    // a level 0 compaction in internal stats.
+    Flush,
+    // Compaction caused by external sst file ingestion
+    ExternalSstIngestion,
+    // total number of compaction reasons, new reasons must be added above this.
+    NumOfReasons,
 }
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
