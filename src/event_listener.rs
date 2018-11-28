@@ -13,7 +13,7 @@
 
 use crocksdb_ffi::{
     self, DBCompactionJobInfo, DBEventListener, DBFlushJobInfo, DBIngestionInfo, DBInstance,
-    DBWriteStallInfo, WriteStallCondition,
+    DBWriteStallInfo, WriteStallCondition, CompactionReason
 };
 use libc::c_void;
 use std::path::Path;
@@ -115,6 +115,10 @@ impl CompactionJobInfo {
 
     pub fn total_output_bytes(&self) -> u64 {
         unsafe { crocksdb_ffi::crocksdb_compactionjobinfo_total_output_bytes(&self.0) }
+    }
+
+    pub fn compaction_reason(&self) -> CompactionReason {
+        unsafe { crocksdb_ffi::crocksdb_compactionjobinfo_compaction_reason(&self.0) }
     }
 }
 

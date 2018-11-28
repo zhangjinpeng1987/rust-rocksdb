@@ -1884,6 +1884,11 @@ uint64_t crocksdb_compactionjobinfo_total_output_bytes(
   return info->rep.stats.total_output_bytes;
 }
 
+int crocksdb_compactionjobinfo_compaction_reason(
+    const crocksdb_compactionjobinfo_t* info) {
+  return info->rep.compaction_reason;
+}
+
 /* ExternalFileIngestionInfo */
 
 const char* crocksdb_externalfileingestioninfo_cf_name(

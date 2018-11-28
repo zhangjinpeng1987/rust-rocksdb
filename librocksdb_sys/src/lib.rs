@@ -166,6 +166,32 @@ pub enum CompactionPriority {
 
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 #[repr(C)]
+pub enum CompactionReason {
+    Unknown,
+    // [Level] number of L0 files > level0_file_num_compaction_trigger
+    LevelL0FilesNum,
+    // [Level] total size of level > MaxBytesForLevel()
+    LevelMaxLevelSize,
+    // [Universal] Compacting for size amplification
+    UniversalSizeAmplification,
+    // [Universal] Compacting for size ratio
+    UniversalSizeRatio,
+    // [Universal] number of sorted runs > level0_file_num_compaction_trigger
+    UniversalSortedRunNum,
+    // [FIFO] total size > max_table_files_size
+    FIFOMaxSize,
+    // [FIFO] reduce number of files.
+    FIFOReduceNumFiles,
+    // [FIFO] files with creation time < (current_time - interval)
+    FIFOTtl,
+    // Manual compaction
+    ManualCompaction,
+    // DB::SuggestCompactRange() marked files for compaction
+    FilesMarkedForCompaction,
+}
+
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+#[repr(C)]
 pub enum DBInfoLogLevel {
     Debug = 0,
     Info = 1,
@@ -1488,6 +1514,9 @@ extern "C" {
     pub fn crocksdb_compactionjobinfo_total_output_bytes(
         info: *const DBCompactionJobInfo,
     ) -> uint64_t;
+    pub fn crocksdb_compactionjobinfo_compaction_reason(
+        info: *const DBCompactionJobInfo,
+    ) -> CompactionReason;
 
     pub fn crocksdb_externalfileingestioninfo_cf_name(
         info: *const DBIngestionInfo,
