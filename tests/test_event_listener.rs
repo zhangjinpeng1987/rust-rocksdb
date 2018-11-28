@@ -77,7 +77,7 @@ impl EventListener for EventCounter {
         self.output_bytes
             .fetch_add(info.total_output_bytes() as usize, Ordering::SeqCst);
 
-        if info.compaction_reason == CompactionReason::ManualCompaction {
+        if info.compaction_reason() == CompactionReason::ManualCompaction {
             self.manual_compaction.fetch_add(1, Ordering::SeqCst);
         }
     }
