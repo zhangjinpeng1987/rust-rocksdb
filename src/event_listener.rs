@@ -12,8 +12,8 @@
 // limitations under the License.
 
 use crocksdb_ffi::{
-    self, DBCompactionJobInfo, DBEventListener, DBFlushJobInfo, DBIngestionInfo,
-    DBInstance, DBWriteStallInfo, WriteStallCondition, CompactionReason
+    self, CompactionReason, DBCompactionJobInfo, DBEventListener, DBFlushJobInfo, DBIngestionInfo,
+    DBInstance, DBWriteStallInfo, WriteStallCondition,
 };
 use libc::c_void;
 use std::path::Path;
