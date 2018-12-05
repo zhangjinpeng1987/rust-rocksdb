@@ -50,11 +50,11 @@ fn test_cryption_env() {
     let path_str = path.path().to_str().unwrap();
     let default_env = Env::default();
     let simple_block_cipher = SimpleBlockCipher::new(4096);
-    let encrypted_env = create_ctr_encrypted_env(&default_env, Box::new(simple_block_cipher));
+    let encrypted_env = Arc::new(create_ctr_encrypted_env(&default_env, Box::new(simple_block_cipher)));
 
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
-    opts.set_env(Arc::new(encrypted_env));
+    opts.set_env(encrypted_env.clone());
     let db = DB::open(opts, path_str).unwrap();
 
     let samples = vec![
@@ -80,12 +80,9 @@ fn test_cryption_env() {
 
     // close db and open again.
     drop(db);
-    let default_env = Env::default();
-    let simple_block_cipher = SimpleBlockCipher::new(4096);
-    let encrypted_env = create_ctr_encrypted_env(&default_env, Box::new(simple_block_cipher));
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
-    opts.set_env(Arc::new(encrypted_env));
+    opts.set_env(encrypted_env);
     let db = DB::open(opts, path_str).unwrap();
 
     // check value in db again
