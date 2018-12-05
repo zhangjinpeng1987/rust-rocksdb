@@ -82,6 +82,8 @@ typedef struct crocksdb_compactionfilterfactory_t
     crocksdb_compactionfilterfactory_t;
 typedef struct crocksdb_comparator_t      crocksdb_comparator_t;
 typedef struct crocksdb_env_t             crocksdb_env_t;
+typedef struct crocksdb_block_cipher_t crocksdb_block_cipher_t;
+typedef struct crocksdb_encryption_provider_t crocksdb_encryption_provider_t;
 typedef struct crocksdb_fifo_compaction_options_t crocksdb_fifo_compaction_options_t;
 typedef struct crocksdb_filelock_t        crocksdb_filelock_t;
 typedef struct crocksdb_filterpolicy_t    crocksdb_filterpolicy_t;
@@ -1307,6 +1309,18 @@ extern C_ROCKSDB_LIBRARY_API void crocksdb_cache_set_capacity(
 
 extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_default_env();
 extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_mem_env();
+extern C_ROCKSDB_LIBRARY_API crocksdb_block_cipher_t*
+crocksdb_create_block_cipher(void*, size_t (*block_size)(void*),
+                             void (*encrypt)(void*, char*),
+                             void(decrypt)(void*, char*));
+extern C_ROCKSDB_LIBRARY_API void crocksdb_destroy_block_cipher(
+    crocksdb_block_cipher_t* cipher);
+extern C_ROCKSDB_LIBRARY_API crocksdb_encryption_provider_t*
+crocksdb_create_ctr_encryption_provider(crocksdb_block_cipher_t* cipher);
+extern C_ROCKSDB_LIBRARY_API void crocksdb_destory_ctr_encryption_provider(
+    crocksdb_encryption_provider_t* provider);
+extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_encrypted_env(
+    crocksdb_env_t* env, crocksdb_encryption_provider_t* provider);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_env_set_background_threads(
     crocksdb_env_t* env, int n);
 extern C_ROCKSDB_LIBRARY_API void

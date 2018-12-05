@@ -63,6 +63,8 @@ pub enum DBIngestionInfo {}
 pub enum DBEventListener {}
 pub enum DBKeyVersions {}
 pub enum DBEnv {}
+pub enum DBBlockCipher {}
+pub enum DBEncryptionProvider {}
 pub enum DBSequentialFile {}
 pub enum DBColumnFamilyMetaData {}
 pub enum DBLevelMetaData {}
@@ -1127,6 +1129,20 @@ extern "C" {
     // Env
     pub fn crocksdb_create_default_env() -> *mut DBEnv;
     pub fn crocksdb_create_mem_env() -> *mut DBEnv;
+    pub fn crocksdb_create_block_cipher(
+        ctx: *mut c_void,
+        block_size: extern "C" fn(*mut c_void) -> size_t,
+        encrypt: extern "C" fn(*mut c_void, *mut c_char),
+        decrypt: extern "C" fn(*mut c_void, *mut c_char),
+    ) -> *mut DBBlockCipher;
+    pub fn crocksdb_destroy_block_cipher(cipher: *mut DBBlockCipher);
+    pub fn crocksdb_create_ctr_encryption_provider(
+        cipher: *mut DBBlockCipher,
+    ) -> *mut DBEncryptionProvider;
+    pub fn crocksdb_create_encrypted_env(
+        env: *mut DBEnv,
+        provider: *mut DBEncryptionProvider,
+    ) -> *mut DBEnv;
     pub fn crocksdb_env_file_exists(env: *mut DBEnv, path: *const c_char, err: *mut *mut c_char);
     pub fn crocksdb_env_delete_file(env: *mut DBEnv, path: *const c_char, err: *mut *mut c_char);
     pub fn crocksdb_env_destroy(env: *mut DBEnv);

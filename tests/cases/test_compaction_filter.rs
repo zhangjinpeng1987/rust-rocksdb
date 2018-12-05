@@ -52,7 +52,8 @@ fn test_compaction_filter() {
                 drop_called: drop_called.clone(),
                 filtered_kvs: filtered_kvs.clone(),
             }),
-        ).unwrap();
+        )
+        .unwrap();
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
     let db = DB::open_cf(
@@ -91,7 +92,8 @@ fn test_compaction_filter() {
                 drop_called: drop_called.clone(),
                 filtered_kvs: filtered_kvs.clone(),
             }),
-        ).unwrap();
+        )
+        .unwrap();
     assert!(drop_called.load(Ordering::Relaxed));
     drop_called.store(false, Ordering::Relaxed);
     {
