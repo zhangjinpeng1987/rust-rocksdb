@@ -50,7 +50,10 @@ fn test_cryption_env() {
     let path_str = path.path().to_str().unwrap();
     let default_env = Env::default();
     let simple_block_cipher = SimpleBlockCipher::new(4096);
-    let encrypted_env = Arc::new(create_ctr_encrypted_env(&default_env, Box::new(simple_block_cipher)));
+    let encrypted_env = Arc::new(create_ctr_encrypted_env(
+        &default_env,
+        Box::new(simple_block_cipher),
+    ));
 
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
