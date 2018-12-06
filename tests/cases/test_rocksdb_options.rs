@@ -740,5 +740,5 @@ fn test_dboptions_set_env() {
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
     opts.set_env(Arc::new(Env::default()));
-    let db = DB::open(opts, path_str).unwrap();
+    let _db = DB::open(opts, path_str).unwrap();
 }
