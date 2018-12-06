@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use super::EncryptionProvider;
 use crocksdb_ffi::{
     self, DBBackupEngine, DBCFHandle, DBCompressionType, DBEnv, DBInstance, DBPinnableSlice,
     DBSequentialFile, DBStatisticsHistogramType, DBStatisticsTickerType, DBWriteBatch,
@@ -2075,6 +2076,7 @@ pub fn supported_compression() -> Vec<DBCompressionType> {
 
 pub struct Env {
     pub inner: *mut DBEnv,
+    _provider: Option<EncryptionProvider>,
 }
 
 unsafe impl Send for Env {}
@@ -2086,16 +2088,25 @@ impl Default for Env {
         unsafe {
             Env {
                 inner: crocksdb_ffi::crocksdb_create_default_env(),
+                _provider: None,
             }
         }
     }
 }
 
 impl Env {
+    pub fn new(inner: *mut DBEnv, provider: Option<EncryptionProvider>) -> Self {
+        Self {
+            inner,
+            _provider: provider,
+        }
+    }
+
     pub fn new_mem() -> Env {
         unsafe {
             Env {
                 inner: crocksdb_ffi::crocksdb_create_mem_env(),
+                _provider: None,
             }
         }
     }

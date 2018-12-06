@@ -3256,6 +3256,7 @@ struct crocksdb_block_cipher_t : public BlockCipher {
   size_t (*block_size_)(void*);
   void (*encrypt_)(void*, char*);
   void (*decrypt_)(void*, char*);
+  void (*destructor_)(void*);
 
   virtual size_t BlockSize() { return block_size_(ctx_); }
 
@@ -3272,22 +3273,25 @@ struct crocksdb_block_cipher_t : public BlockCipher {
     decrypt_(ctx_, data);
     return Status::OK();
   }
+
+  virtual ~crocksdb_block_cipher_t() { destructor_(ctx_); }
 };
 
-crocksdb_block_cipher_t* crocksdb_create_block_cipher(
+crocksdb_block_cipher_t* crocksdb_block_cipher_create(
     void* ctx, size_t (*block_size)(void*), void (*encrypt)(void*, char*),
-    void(decrypt)(void*, char*)) {
+    void (*decrypt)(void*, char*), void (*destructor)(void*)) {
   auto c = new crocksdb_block_cipher_t;
   c->ctx_ = ctx;
   c->block_size_ = block_size;
   c->encrypt_ = encrypt;
   c->decrypt_ = decrypt;
+  c->destructor_ = destructor;
   return c;
 }
 
-void crocksdb_destroy_block_cipher(crocksdb_block_cipher_t* c) { delete c; }
+void crocksdb_block_cipher_destroy(crocksdb_block_cipher_t* c) { delete c; }
 
-crocksdb_encryption_provider_t* crocksdb_create_ctr_encryption_provider(
+crocksdb_encryption_provider_t* crocksdb_ctr_encryption_provider_create(
     crocksdb_block_cipher_t* block_cipher) {
   auto provider = new CTREncryptionProvider(*block_cipher);
   auto result = new crocksdb_encryption_provider_t;
@@ -3295,7 +3299,7 @@ crocksdb_encryption_provider_t* crocksdb_create_ctr_encryption_provider(
   return result;
 }
 
-void crocksdb_destory_ctr_encryption_provider(
+void crocksdb_encryption_provider_destroy(
     crocksdb_encryption_provider_t* provider) {
   if (provider->rep) {
     delete provider->rep;

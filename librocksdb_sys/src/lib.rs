@@ -1129,16 +1129,18 @@ extern "C" {
     // Env
     pub fn crocksdb_create_default_env() -> *mut DBEnv;
     pub fn crocksdb_create_mem_env() -> *mut DBEnv;
-    pub fn crocksdb_create_block_cipher(
+    pub fn crocksdb_block_cipher_create(
         ctx: *mut c_void,
         block_size: extern "C" fn(*mut c_void) -> size_t,
         encrypt: extern "C" fn(*mut c_void, *mut c_char),
         decrypt: extern "C" fn(*mut c_void, *mut c_char),
+        destructor: extern "C" fn(*mut c_void),
     ) -> *mut DBBlockCipher;
-    pub fn crocksdb_destroy_block_cipher(cipher: *mut DBBlockCipher);
-    pub fn crocksdb_create_ctr_encryption_provider(
+    pub fn crocksdb_block_cipher_destroy(cipher: *mut DBBlockCipher);
+    pub fn crocksdb_ctr_encryption_provider_create(
         cipher: *mut DBBlockCipher,
     ) -> *mut DBEncryptionProvider;
+    pub fn crocksdb_encryption_provider_destroy(provider: *mut DBEncryptionProvider);
     pub fn crocksdb_create_encrypted_env(
         env: *mut DBEnv,
         provider: *mut DBEncryptionProvider,
