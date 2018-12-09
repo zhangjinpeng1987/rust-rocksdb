@@ -614,7 +614,10 @@ impl DBOptions {
     }
 
     pub fn set_env(&mut self, env: Arc<Env>) {
-        self.env = Some(env);
+        unsafe {
+            crocksdb_ffi::crocksdb_options_set_env(self.inner, env.inner);
+            self.env = Some(env);
+        }
     }
 
     pub fn set_max_open_files(&mut self, nfiles: c_int) {

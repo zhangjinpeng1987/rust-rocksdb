@@ -33,13 +33,21 @@ impl IBlockCipher for SimpleBlockCipher {
 
     fn encrypt(&self, data: &mut [u8]) {
         for i in 0..data.len() {
-            data[i] += 1;
+            if data[i] == 255 {
+                data[i] = 0;
+            } else {
+                data[i] += 1;
+            }
         }
     }
 
     fn decrypt(&self, data: &mut [u8]) {
         for i in 0..data.len() {
-            data[i] -= 1;
+            if data[i] == 0 {
+                data[i] = 255;
+            } else {
+                data[i] -= 1;
+            }
         }
     }
 }
