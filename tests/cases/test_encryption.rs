@@ -12,7 +12,7 @@
 // limitations under the License.
 
 use rocksdb::Env;
-use rocksdb::{create_ctr_encrypted_env, DBOptions, IBlockCipher, Writable, DB};
+use rocksdb::{create_ctr_encrypted_env, BlockCipher, DBOptions, Writable, DB};
 use std::sync::Arc;
 use tempdir::TempDir;
 
@@ -26,7 +26,7 @@ impl SimpleBlockCipher {
     }
 }
 
-impl IBlockCipher for SimpleBlockCipher {
+impl BlockCipher for SimpleBlockCipher {
     fn block_size(&self) -> usize {
         self.block_size
     }
@@ -66,7 +66,7 @@ impl CTR16BlockCipher {
     }
 }
 
-impl IBlockCipher for CTR16BlockCipher {
+impl BlockCipher for CTR16BlockCipher {
     fn block_size(&self) -> usize {
         16
     }
