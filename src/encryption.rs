@@ -40,7 +40,7 @@ pub struct EncryptionProvider {
 }
 
 impl EncryptionProvider {
-    fn from_block_cipher(block_cipher: BlockCipher) -> Self {
+    fn ctr_encryption_provider(block_cipher: BlockCipher) -> Self {
         let provider =
             unsafe { crocksdb_ffi::crocksdb_ctr_encryption_provider_create(block_cipher.inner) };
         Self {
@@ -112,7 +112,7 @@ pub fn create_ctr_encrypted_env(env: &Env, cipher: Box<IBlockCipher>) -> Env {
             f_decrypt,
             f_destroy_block_cipher,
         ));
-        let provider = EncryptionProvider::from_block_cipher(block_ciper);
+        let provider = EncryptionProvider::ctr_encryption_provider(block_ciper);
         let env_inner = crocksdb_ffi::crocksdb_create_encrypted_env(env.inner, provider.inner);
         Env::new(env_inner, Some(provider))
     }
