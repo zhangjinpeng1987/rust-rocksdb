@@ -59,8 +59,16 @@ impl Drop for EncryptionProvider {
 }
 
 pub trait IBlockCipher {
+    // Returns the size of each block, should less equal to 2048.
+    // 1024, 512, 256 are recommended.
     fn block_size(&self) -> usize;
+
+    // Encrypt a block of data.
+    // Length of data is equal to block_size().
     fn encrypt(&self, data: &mut [u8]);
+
+    // Decrypt a block of data.
+    // Length of data is equal to block_size().
     fn decrypt(&self, data: &mut [u8]);
 }
 

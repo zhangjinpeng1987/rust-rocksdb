@@ -52,16 +52,63 @@ impl IBlockCipher for SimpleBlockCipher {
     }
 }
 
+static CIPHER16: &'static [u8] = &[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
+
+struct CTR16BlockCipher {
+    ciphertext: &'static [u8],
+}
+
+impl CTR16BlockCipher {
+    fn new() -> Self {
+        Self {
+            ciphertext: CIPHER16,
+        }
+    }
+}
+
+impl IBlockCipher for CTR16BlockCipher {
+    fn block_size(&self) -> usize {
+        16
+    }
+
+    fn encrypt(&self, data: &mut [u8]) {
+        for i in 0..data.len() {
+            data[i] ^= self.ciphertext[i];
+        }
+    }
+
+    fn decrypt(&self, data: &mut [u8]) {
+        self.encrypt(data);
+    }
+}
+
 #[test]
-fn test_cryption_env() {
-    let path = TempDir::new("_rust_rocksdb_cryption_env").expect("");
-    let path_str = path.path().to_str().unwrap();
+fn test_simple_encrypted_env() {
     let default_env = Env::default();
-    let simple_block_cipher = SimpleBlockCipher::new(4096);
+    let simple_block_cipher = SimpleBlockCipher::new(128);
     let encrypted_env = Arc::new(create_ctr_encrypted_env(
         &default_env,
         Box::new(simple_block_cipher),
     ));
+
+    test_encrypted_env(encrypted_env);
+}
+
+#[test]
+fn test_ctr16_encrypted_env() {
+    let default_env = Env::default();
+    let ctr16_block_cipher = CTR16BlockCipher::new();
+    let encrypted_env = Arc::new(create_ctr_encrypted_env(
+        &default_env,
+        Box::new(ctr16_block_cipher),
+    ));
+
+    test_encrypted_env(encrypted_env);
+}
+
+fn test_encrypted_env(encrypted_env: Arc<Env>) {
+    let path = TempDir::new("_rust_rocksdb_cryption_env").expect("");
+    let path_str = path.path().to_str().unwrap();
 
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
