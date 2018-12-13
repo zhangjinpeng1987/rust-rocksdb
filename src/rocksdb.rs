@@ -34,6 +34,7 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::{fs, ptr, slice};
 use table_properties::TablePropertiesCollection;
+use util::is_power_of_two;
 
 pub struct CFHandle {
     inner: *mut DBCFHandle,
@@ -2102,19 +2103,23 @@ impl Env {
     }
 
     // Create a ctr encrypted env with the default env and a given ciper text.
-    // The length of ciper text must equal to the block size.
-    // The block size must be 2^n, and must be less or equal to 2048.
+    // The length of ciper text must be 2^n, and must be less or equal to 2048.
     // The recommanded block size are 1024, 512 and 256.
-    pub fn new_default_ctr_encrypted_env(block_size: usize, ciphertext: &[u8]) -> Env {
-        assert_eq!(block_size, ciphertext.len());
+    pub fn new_default_ctr_encrypted_env(ciphertext: &[u8]) -> Result<Env, String> {
+        let len = ciphertext.len();
+        if len > 2048 || !is_power_of_two(len) {
+            return Err(
+                "ciphertext length must be less or equal to 2048, and must be power of 2"
+                    .to_owned(),
+            );
+        }
         let env = unsafe {
             crocksdb_ffi::crocksdb_default_ctr_encrypted_env_create(
-                block_size,
                 mem::transmute(&ciphertext[0]),
-                ciphertext.len(),
+                len,
             )
         };
-        Env { inner: env }
+        Ok(Env { inner: env })
     }
 
     pub fn new_sequential_file(
