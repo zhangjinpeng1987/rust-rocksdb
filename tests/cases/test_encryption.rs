@@ -12,101 +12,22 @@
 // limitations under the License.
 
 use rocksdb::Env;
-use rocksdb::{create_ctr_encrypted_env, BlockCipher, DBOptions, Writable, DB};
+use rocksdb::{DBOptions, Writable, DB};
 use std::sync::Arc;
 use tempdir::TempDir;
 
-struct SimpleBlockCipher {
-    block_size: usize,
-}
-
-impl SimpleBlockCipher {
-    fn new(block_size: usize) -> Self {
-        Self { block_size }
-    }
-}
-
-impl BlockCipher for SimpleBlockCipher {
-    fn block_size(&self) -> usize {
-        self.block_size
-    }
-
-    fn encrypt(&self, data: &mut [u8]) {
-        for i in 0..data.len() {
-            if data[i] == 255 {
-                data[i] = 0;
-            } else {
-                data[i] += 1;
-            }
-        }
-    }
-
-    fn decrypt(&self, data: &mut [u8]) {
-        for i in 0..data.len() {
-            if data[i] == 0 {
-                data[i] = 255;
-            } else {
-                data[i] -= 1;
-            }
-        }
-    }
-}
-
-static CIPHER16: &'static [u8] = &[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1];
-
-struct CTR16BlockCipher {
-    ciphertext: &'static [u8],
-}
-
-impl CTR16BlockCipher {
-    fn new() -> Self {
-        Self {
-            ciphertext: CIPHER16,
-        }
-    }
-}
-
-impl BlockCipher for CTR16BlockCipher {
-    fn block_size(&self) -> usize {
-        16
-    }
-
-    fn encrypt(&self, data: &mut [u8]) {
-        for i in 0..data.len() {
-            data[i] ^= self.ciphertext[i];
-        }
-    }
-
-    fn decrypt(&self, data: &mut [u8]) {
-        self.encrypt(data);
-    }
-}
-
 #[test]
-fn test_simple_encrypted_env() {
-    let default_env = Env::default();
-    let simple_block_cipher = SimpleBlockCipher::new(128);
-    let encrypted_env = Arc::new(create_ctr_encrypted_env(
-        &default_env,
-        Box::new(simple_block_cipher),
-    ));
-
-    test_encrypted_env(encrypted_env);
+fn test_ctr_encrypted_env() {
+    let test_cipher_texts: &[&[u8]] = &[&[16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1]];
+    for ciphertext in test_cipher_texts {
+        test_ctr_encrypted_env_impl(Arc::new(Env::new_default_ctr_encrypted_env(
+            ciphertext.len(),
+            ciphertext,
+        )));
+    }
 }
 
-#[test]
-fn test_ctr16_encrypted_env() {
-    let default_env = Env::default();
-    let ctr16_block_cipher = CTR16BlockCipher::new();
-    let encrypted_env = Arc::new(create_ctr_encrypted_env(
-        &default_env,
-        Box::new(ctr16_block_cipher),
-    ));
-
-    test_encrypted_env(encrypted_env);
-}
-
-fn test_encrypted_env(encrypted_env: Arc<Env>) {
+fn test_ctr_encrypted_env_impl(encrypted_env: Arc<Env>) {
     let path = TempDir::new("_rust_rocksdb_cryption_env").expect("");
     let path_str = path.path().to_str().unwrap();
 

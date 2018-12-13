@@ -21,7 +21,6 @@ pub extern crate librocksdb_sys;
 extern crate tempdir;
 
 pub use compaction_filter::CompactionFilter;
-pub use encryption::*;
 pub use event_listener::{
     CompactionJobInfo, EventListener, FlushJobInfo, IngestionInfo, WriteStallInfo,
 };
@@ -54,7 +53,6 @@ pub use table_properties_collector_factory::TablePropertiesCollectorFactory;
 
 mod compaction_filter;
 pub mod comparator;
-mod encryption;
 mod event_listener;
 pub mod merge_operator;
 mod metadata;

@@ -1307,21 +1307,12 @@ extern C_ROCKSDB_LIBRARY_API void crocksdb_cache_set_capacity(
 
 /* Env */
 
-extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_default_env();
-extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_mem_env();
-extern C_ROCKSDB_LIBRARY_API crocksdb_block_cipher_t*
-crocksdb_block_cipher_create(void*, size_t (*block_size)(void*),
-                             void (*encrypt)(void*, char*),
-                             void (*decrypt)(void*, char*),
-                             void (*destructor)(void*));
-extern C_ROCKSDB_LIBRARY_API void crocksdb_block_cipher_destroy(
-    crocksdb_block_cipher_t* cipher);
-extern C_ROCKSDB_LIBRARY_API crocksdb_encryption_provider_t*
-crocksdb_ctr_encryption_provider_create(crocksdb_block_cipher_t* cipher);
-extern C_ROCKSDB_LIBRARY_API void crocksdb_encryption_provider_destroy(
-    crocksdb_encryption_provider_t* provider);
-extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_create_encrypted_env(
-    crocksdb_env_t* env, crocksdb_encryption_provider_t* provider);
+extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_default_env_create();
+extern C_ROCKSDB_LIBRARY_API crocksdb_env_t* crocksdb_mem_env_create();
+extern C_ROCKSDB_LIBRARY_API crocksdb_env_t*
+crocksdb_default_ctr_encrypted_env_create(size_t block_size,
+                                          const char* ciphertext,
+                                          size_t ciphertext_len);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_env_set_background_threads(
     crocksdb_env_t* env, int n);
 extern C_ROCKSDB_LIBRARY_API void

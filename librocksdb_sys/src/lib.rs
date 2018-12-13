@@ -1127,23 +1127,12 @@ extern "C" {
     pub fn crocksdb_compactionfilter_destroy(filter: *mut DBCompactionFilter);
 
     // Env
-    pub fn crocksdb_create_default_env() -> *mut DBEnv;
-    pub fn crocksdb_create_mem_env() -> *mut DBEnv;
-    pub fn crocksdb_block_cipher_create(
-        ctx: *mut c_void,
-        block_size: extern "C" fn(*mut c_void) -> size_t,
-        encrypt: extern "C" fn(*mut c_void, *mut c_char),
-        decrypt: extern "C" fn(*mut c_void, *mut c_char),
-        destructor: extern "C" fn(*mut c_void),
-    ) -> *mut DBBlockCipher;
-    pub fn crocksdb_block_cipher_destroy(cipher: *mut DBBlockCipher);
-    pub fn crocksdb_ctr_encryption_provider_create(
-        cipher: *mut DBBlockCipher,
-    ) -> *mut DBEncryptionProvider;
-    pub fn crocksdb_encryption_provider_destroy(provider: *mut DBEncryptionProvider);
-    pub fn crocksdb_create_encrypted_env(
-        env: *mut DBEnv,
-        provider: *mut DBEncryptionProvider,
+    pub fn crocksdb_default_env_create() -> *mut DBEnv;
+    pub fn crocksdb_mem_env_create() -> *mut DBEnv;
+    pub fn crocksdb_default_ctr_encrypted_env_create(
+        block_size: size_t,
+        ciphertext: *const c_char,
+        ciphertext_len: size_t,
     ) -> *mut DBEnv;
     pub fn crocksdb_env_file_exists(env: *mut DBEnv, path: *const c_char, err: *mut *mut c_char);
     pub fn crocksdb_env_delete_file(env: *mut DBEnv, path: *const c_char, err: *mut *mut c_char);

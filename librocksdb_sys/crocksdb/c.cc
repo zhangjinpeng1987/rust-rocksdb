@@ -464,6 +464,8 @@ struct crocksdb_mergeoperator_t : public MergeOperator {
 struct crocksdb_env_t {
   Env* rep;
   bool is_default;
+  EncryptionProvider* encryption_provoider;
+  BlockCipher* block_cipher;
 };
 
 struct crocksdb_encryption_provider_t {
@@ -3237,81 +3239,63 @@ void crocksdb_cache_set_capacity(crocksdb_cache_t* cache, size_t capacity) {
   cache->rep->SetCapacity(capacity);
 }
 
-crocksdb_env_t* crocksdb_create_default_env() {
+crocksdb_env_t* crocksdb_default_env_create() {
   crocksdb_env_t* result = new crocksdb_env_t;
   result->rep = Env::Default();
+  result->block_cipher = nullptr;
+  result->encryption_provoider = nullptr;
   result->is_default = true;
   return result;
 }
 
-crocksdb_env_t* crocksdb_create_mem_env() {
+crocksdb_env_t* crocksdb_mem_env_create() {
   crocksdb_env_t* result = new crocksdb_env_t;
   result->rep = rocksdb::NewMemEnv(Env::Default());
+  result->block_cipher = nullptr;
+  result->encryption_provoider = nullptr;
   result->is_default = false;
   return result;
 }
 
-struct crocksdb_block_cipher_t : public BlockCipher {
-  void* ctx_;
-  size_t (*block_size_)(void*);
-  void (*encrypt_)(void*, char*);
-  void (*decrypt_)(void*, char*);
-  void (*destructor_)(void*);
+struct CTRBlockCipher : public BlockCipher {
+  CTRBlockCipher(size_t block_size, const std::string& cipertext)
+      : block_size_(block_size), cipertext_(cipertext) {
+    assert(block_size == cipertext.size());
+  }
 
-  virtual size_t BlockSize() { return block_size_(ctx_); }
+  virtual size_t BlockSize() { return block_size_; }
 
-  // Encrypt a block of data.
-  // Length of data is equal to BlockSize().
   virtual Status Encrypt(char* data) {
-    encrypt_(ctx_, data);
+    const char* ciper_ptr = cipertext_.c_str();
+    for (size_t i = 0; i < block_size_; i++) {
+      data[i] = data[i] ^ ciper_ptr[i];
+    }
+
     return Status::OK();
   }
 
-  // Decrypt a block of data.
-  // Length of data is equal to BlockSize().
   virtual Status Decrypt(char* data) {
-    decrypt_(ctx_, data);
+    Encrypt(data);
     return Status::OK();
   }
 
-  virtual ~crocksdb_block_cipher_t() { destructor_(ctx_); }
+ protected:
+  std::string cipertext_;
+  size_t block_size_;
 };
 
-crocksdb_block_cipher_t* crocksdb_block_cipher_create(
-    void* ctx, size_t (*block_size)(void*), void (*encrypt)(void*, char*),
-    void (*decrypt)(void*, char*), void (*destructor)(void*)) {
-  auto c = new crocksdb_block_cipher_t;
-  c->ctx_ = ctx;
-  c->block_size_ = block_size;
-  c->encrypt_ = encrypt;
-  c->decrypt_ = decrypt;
-  c->destructor_ = destructor;
-  return c;
-}
-
-void crocksdb_block_cipher_destroy(crocksdb_block_cipher_t* c) { delete c; }
-
-crocksdb_encryption_provider_t* crocksdb_ctr_encryption_provider_create(
-    crocksdb_block_cipher_t* block_cipher) {
-  auto provider = new CTREncryptionProvider(*block_cipher);
-  auto result = new crocksdb_encryption_provider_t;
-  result->rep = provider;
-  return result;
-}
-
-void crocksdb_encryption_provider_destroy(
-    crocksdb_encryption_provider_t* provider) {
-  if (provider->rep) {
-    delete provider->rep;
-  }
-  delete provider;
-}
-
-crocksdb_env_t* crocksdb_create_encrypted_env(
-    crocksdb_env_t* env, crocksdb_encryption_provider_t* provider) {
+crocksdb_env_t* crocksdb_default_ctr_encrypted_env_create(
+    size_t block_size, const char* ciphertext, size_t ciphertext_len) {
+  // cipertext length must equal to block_size.
+  assert(block_size == ciphertext_len);
   auto result = new crocksdb_env_t;
-  result->rep = NewEncryptedEnv(env->rep, provider->rep);
-  result->is_default = false;
+  result->block_cipher =
+      new CTRBlockCipher(block_size, std::string(ciphertext, ciphertext_len));
+  result->encryption_provoider =
+      new CTREncryptionProvider(*result->block_cipher);
+  result->rep = NewEncryptedEnv(Env::Default(), result->encryption_provoider);
+  result->is_default = true;
+
   return result;
 }
 
@@ -3337,6 +3321,8 @@ void crocksdb_env_delete_file(crocksdb_env_t* env, const char* path, char** errp
 
 void crocksdb_env_destroy(crocksdb_env_t* env) {
   if (!env->is_default) delete env->rep;
+  if (env->block_cipher) delete env->block_cipher;
+  if (env->encryption_provoider) delete env->encryption_provoider;
   delete env;
 }
 

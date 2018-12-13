@@ -12,7 +12,6 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use super::EncryptionProviderWrapper;
 use crocksdb_ffi::{
     self, DBBackupEngine, DBCFHandle, DBCompressionType, DBEnv, DBInstance, DBPinnableSlice,
     DBSequentialFile, DBStatisticsHistogramType, DBStatisticsTickerType, DBWriteBatch,
@@ -29,6 +28,7 @@ use std::collections::BTreeMap;
 use std::ffi::{CStr, CString};
 use std::fmt::{self, Debug, Formatter};
 use std::io;
+use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
@@ -2076,7 +2076,6 @@ pub fn supported_compression() -> Vec<DBCompressionType> {
 
 pub struct Env {
     pub inner: *mut DBEnv,
-    _provider: Option<EncryptionProviderWrapper>,
 }
 
 unsafe impl Send for Env {}
@@ -2087,28 +2086,35 @@ impl Default for Env {
     fn default() -> Env {
         unsafe {
             Env {
-                inner: crocksdb_ffi::crocksdb_create_default_env(),
-                _provider: None,
+                inner: crocksdb_ffi::crocksdb_default_env_create(),
             }
         }
     }
 }
 
 impl Env {
-    pub fn new(inner: *mut DBEnv, provider: Option<EncryptionProviderWrapper>) -> Self {
-        Self {
-            inner,
-            _provider: provider,
-        }
-    }
-
     pub fn new_mem() -> Env {
         unsafe {
             Env {
-                inner: crocksdb_ffi::crocksdb_create_mem_env(),
-                _provider: None,
+                inner: crocksdb_ffi::crocksdb_mem_env_create(),
             }
         }
+    }
+
+    // Create a ctr encrypted env with default env and a given ciper text.
+    // The length of ciper text must equal to the block size.
+    // The block size must be 2^n, and must be less or equal to 2048.
+    // The recommanded block size are 1024, 512 and 256.
+    pub fn new_default_ctr_encrypted_env(block_size: usize, ciphertext: &[u8]) -> Env {
+        assert_eq!(block_size, ciphertext.len());
+        let env = unsafe {
+            crocksdb_ffi::crocksdb_default_ctr_encrypted_env_create(
+                block_size,
+                mem::transmute(&ciphertext[0]),
+                ciphertext.len(),
+            )
+        };
+        Env { inner: env }
     }
 
     pub fn new_sequential_file(
@@ -2405,7 +2411,8 @@ mod test {
             db.put(
                 format!("{:04}", i).as_bytes(),
                 format!("{:04}", i).as_bytes(),
-            ).expect("");
+            )
+            .expect("");
         }
         db.flush(true).expect("");
         assert!(db.get(b"0001").expect("").is_some());
@@ -2493,7 +2500,8 @@ mod test {
                 restore_dir.path().to_str().unwrap(),
                 restore_dir.path().to_str().unwrap(),
                 &ropt,
-            ).unwrap();
+            )
+            .unwrap();
 
             let r = restored_db.get(key);
             assert!(r.unwrap().unwrap().to_utf8().unwrap() == str::from_utf8(value).unwrap());
@@ -2574,7 +2582,8 @@ mod test {
                 db1.put(b"k2", b"v2").unwrap();
                 db1.flush(true).unwrap();
                 db1.compact_range(None, None);
-            }).unwrap();
+            })
+            .unwrap();
         // Wait until all currently running background processes finish.
         db.pause_bg_work();
         assert_eq!(
@@ -2757,11 +2766,9 @@ mod test {
         let cf_name: &str = "cf_dynamic_level_bytes";
 
         // test when options not exist
-        assert!(
-            load_latest_options(dbpath, &Env::default(), false)
-                .unwrap()
-                .is_none()
-        );
+        assert!(load_latest_options(dbpath, &Env::default(), false)
+            .unwrap()
+            .is_none());
 
         let mut opts = DBOptions::new();
         opts.create_if_missing(true);
