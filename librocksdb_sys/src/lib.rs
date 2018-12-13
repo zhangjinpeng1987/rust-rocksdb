@@ -63,8 +63,6 @@ pub enum DBIngestionInfo {}
 pub enum DBEventListener {}
 pub enum DBKeyVersions {}
 pub enum DBEnv {}
-pub enum DBBlockCipher {}
-pub enum DBEncryptionProvider {}
 pub enum DBSequentialFile {}
 pub enum DBColumnFamilyMetaData {}
 pub enum DBLevelMetaData {}
