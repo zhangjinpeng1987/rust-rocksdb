@@ -2101,7 +2101,7 @@ impl Env {
         }
     }
 
-    // Create a ctr encrypted env with default env and a given ciper text.
+    // Create a ctr encrypted env with the default env and a given ciper text.
     // The length of ciper text must equal to the block size.
     // The block size must be 2^n, and must be less or equal to 2048.
     // The recommanded block size are 1024, 512 and 256.

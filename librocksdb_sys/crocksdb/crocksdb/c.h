@@ -82,8 +82,6 @@ typedef struct crocksdb_compactionfilterfactory_t
     crocksdb_compactionfilterfactory_t;
 typedef struct crocksdb_comparator_t      crocksdb_comparator_t;
 typedef struct crocksdb_env_t             crocksdb_env_t;
-typedef struct crocksdb_block_cipher_t crocksdb_block_cipher_t;
-typedef struct crocksdb_encryption_provider_t crocksdb_encryption_provider_t;
 typedef struct crocksdb_fifo_compaction_options_t crocksdb_fifo_compaction_options_t;
 typedef struct crocksdb_filelock_t        crocksdb_filelock_t;
 typedef struct crocksdb_filterpolicy_t    crocksdb_filterpolicy_t;

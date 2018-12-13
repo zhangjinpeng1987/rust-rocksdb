@@ -468,10 +468,6 @@ struct crocksdb_env_t {
   BlockCipher* block_cipher;
 };
 
-struct crocksdb_encryption_provider_t {
-  EncryptionProvider* rep;
-};
-
 struct crocksdb_slicetransform_t : public SliceTransform {
   void* state_;
   void (*destructor_)(void*);
