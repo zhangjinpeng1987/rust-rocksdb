@@ -32,6 +32,7 @@ use std::mem;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
+use std::sync::Arc;
 use std::{fs, ptr, slice};
 use table_properties::TablePropertiesCollection;
 use util::is_power_of_two;
@@ -602,6 +603,10 @@ impl DB {
         }
 
         Ok(cfs)
+    }
+
+    pub fn env(&self) -> Option<Arc<Env>> {
+        self.opts.env()
     }
 
     pub fn pause_bg_work(&self) {
@@ -2284,7 +2289,6 @@ mod test {
     use std::path::Path;
     use std::str;
     use std::string::String;
-    use std::sync::*;
     use std::thread;
     use tempdir::TempDir;
 
