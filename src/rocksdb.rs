@@ -602,6 +602,10 @@ impl DB {
         Ok(cfs)
     }
 
+    pub fn env(&self) -> Option<Arc<Env>> {
+        self.opts.env()
+    }
+
     pub fn pause_bg_work(&self) {
         unsafe {
             crocksdb_ffi::crocksdb_pause_bg_work(self.inner);
