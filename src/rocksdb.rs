@@ -31,6 +31,7 @@ use std::io;
 use std::ops::Deref;
 use std::path::{Path, PathBuf};
 use std::str::from_utf8;
+use std::sync::Arc;
 use std::{fs, ptr, slice};
 use table_properties::TablePropertiesCollection;
 
@@ -2266,7 +2267,6 @@ mod test {
     use std::path::Path;
     use std::str;
     use std::string::String;
-    use std::sync::*;
     use std::thread;
     use tempdir::TempDir;
 
