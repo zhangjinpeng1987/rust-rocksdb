@@ -2688,18 +2688,30 @@ void crocksdb_options_set_delayed_write_rate(crocksdb_options_t *opt, uint64_t d
 struct crocksdb_compactionguard_t : public CompactionGuard {
   void* state_;
   void (*destructor_)(void*);
-  char** (*get_guards_in_range_)(void*, const char* start, size_t start_len,
-                                 const char* end, size_t end_len, size_t* total,
-                                 size_t** lens);
+  char** (*get_guards_in_range_)(void*, const char* start, uint32_t start_len,
+                                 const char* end, uint32_t end_len, uint32_t* total,
+                                 uint32_t** lens);
 
   virtual ~crocksdb_compactionguard_t() { (*destructor_)(state_); }
 
   virtual std::vector<std::string> GetGuardsInRange(Slice* start, Slice* end) {
-    size_t total = 0;
-    size_t* lens;
+    const char* s = nullptr;
+    const char* e = nullptr;
+    uint32_t s_len = 0, e_len = 0;
+    // start and end maybe null, means unbounded.
+    if (start != nullptr) {
+      s = start->data();
+      s_len = start->size();
+    }
+    if (end != nullptr) {
+      e = end->data();
+      e_len = end->size();
+    }
+
+    uint32_t total = 0;
+    uint32_t* lens;
     char** res =
-        (*get_guards_in_range_)(state_, start->data(), start->size(),
-                                end->data(), end->size(), &total, &lens);
+        (*get_guards_in_range_)(state_, s, s_len, e, e_len, &total, &lens);
 
     std::vector<std::string> guards;
     for (size_t i = 0; i < total; i++) {
@@ -2723,9 +2735,9 @@ void crocksdb_options_set_compaction_guard(crocksdb_options_t* opt,
 
 crocksdb_compactionguard_t* crocksdb_compactionguard_create(
     void* state, void (*destructor)(void*),
-    char** (*get_guards_in_range)(void*, const char* start, size_t start_len,
-                                  const char* end, size_t end_len,
-                                  size_t* total, size_t** lens)) {
+    char** (*get_guards_in_range)(void*, const char* start, uint32_t start_len,
+                                  const char* end, uint32_t end_len,
+                                  uint32_t* total, uint32_t** lens)) {
   crocksdb_compactionguard_t* result = new crocksdb_compactionguard_t;
   result->state_ = state;
   result->destructor_ = destructor;

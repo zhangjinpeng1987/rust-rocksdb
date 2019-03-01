@@ -1163,11 +1163,11 @@ extern "C" {
         get_gurads_in_range: extern "C" fn(
             *mut c_void,
             *const u8,
-            size_t,
+            u32,
             *const u8,
-            size_t,
-            *mut size_t,
-            *mut *mut size_t,
+            u32,
+            *mut u32,
+            *mut *mut u32,
         ) -> *mut *mut u8,
     ) -> *mut DBCompactionGuard;
     pub fn crocksdb_compactionguard_destory(guard: *mut DBCompactionGuard);

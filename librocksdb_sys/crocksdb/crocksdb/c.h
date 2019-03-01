@@ -1172,9 +1172,9 @@ extern C_ROCKSDB_LIBRARY_API void crocksdb_compactionfilterfactory_destroy(
 extern C_ROCKSDB_LIBRARY_API crocksdb_compactionguard_t*
 crocksdb_compactionguard_create(
     void* state, void (*destructor)(void*),
-    char** get_guards_in_range(void*, const char* start, size_t start_len,
-                               const char* end, size_t end_len, size_t* total,
-                               size_t** lens));
+    char** get_guards_in_range(void*, const char* start, uint32_t start_len,
+                               const char* end, uint32_t end_len, uint32_t* total,
+                               uint32_t** lens));
 extern C_ROCKSDB_LIBRARY_API void crocksdb_compactionguard_destory(
     crocksdb_compactionguard_t*);
 

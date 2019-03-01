@@ -1,5 +1,5 @@
 use crocksdb_ffi::{self, DBCompactionGuard};
-use libc::{c_void, size_t};
+use libc::c_void;
 use std::{mem, slice};
 
 /// `CompactionGuard` allows an application to provide guards for compaction.
@@ -21,31 +21,32 @@ extern "C" fn destructor(guard: *mut c_void) {
 extern "C" fn get_guards_in_range(
     guard: *mut c_void,
     start: *const u8,
-    start_len: size_t,
+    start_len: u32,
     end: *const u8,
-    end_len: size_t,
-    total: *mut size_t,
-    lens: *mut *mut size_t,
+    end_len: u32,
+    total: *mut u32,
+    lens: *mut *mut u32,
 ) -> *mut *mut u8 {
     unsafe {
         let guard = &mut *(guard as *mut CompactionGuardProxy);
-        let start = slice::from_raw_parts(start, start_len);
-        let end = slice::from_raw_parts(end, end_len);
+        let start = slice::from_raw_parts(start, start_len as usize);
+        let end = slice::from_raw_parts(end, end_len as usize);
         let mut guards = guard.guard.get_guards_in_range(start, end);
 
-        *total = guards.len();
+        *total = guards.len() as u32;
         if *total > 0 {
-            let mut res = libc::malloc(*total) as *mut *mut u8;
-            *lens = libc::malloc(*total * mem::size_of::<size_t>()) as *mut size_t;
+            let mut res = libc::malloc(*total as usize) as *mut *mut u8;
+            let mut l = libc::malloc(*total as usize * mem::size_of::<u32>()) as *mut u32;
+            *lens = l;
             for key in guards.drain(..) {
                 let cloned = libc::malloc(key.len());
                 libc::memcpy(cloned, key.as_ptr() as *const c_void, key.len());
                 *res = cloned as *mut u8;
                 res = res.add(1);
-                **lens = key.len() as size_t;
-                *lens = (*lens).add(1);
+                *l = key.len() as u32;
+                l = l.add(1);
             }
-            res.sub(*total)
+            res.sub(*total as usize)
         } else {
             0 as *mut *mut u8
         }

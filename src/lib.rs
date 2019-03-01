@@ -21,6 +21,7 @@ pub extern crate librocksdb_sys;
 extern crate tempdir;
 
 pub use compaction_filter::CompactionFilter;
+pub use compaction_guard::CompactionGuard;
 pub use event_listener::{
     CompactionJobInfo, EventListener, FlushJobInfo, IngestionInfo, WriteStallInfo,
 };
