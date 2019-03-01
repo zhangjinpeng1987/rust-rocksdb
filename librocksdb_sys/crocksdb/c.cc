@@ -11,12 +11,14 @@
 
 #include "rocksdb/cache.h"
 #include "rocksdb/compaction_filter.h"
+#include "rocksdb/compaction_guard.h"
 #include "rocksdb/comparator.h"
 #include "rocksdb/convenience.h"
 #include "rocksdb/db.h"
 #include "rocksdb/env.h"
 #include "rocksdb/env_encryption.h"
 #include "rocksdb/filter_policy.h"
+#include "rocksdb/iostats_context.h"
 #include "rocksdb/iterator.h"
 #include "rocksdb/ldb_tool.h"
 #include "rocksdb/listener.h"
@@ -36,7 +38,6 @@
 #include "rocksdb/utilities/debug.h"
 #include "rocksdb/utilities/options_util.h"
 #include "rocksdb/write_batch.h"
-#include "rocksdb/iostats_context.h"
 
 #include "db/column_family.h"
 #include "table/sst_file_writer_collectors.h"
@@ -66,6 +67,7 @@ using rocksdb::ColumnFamilyOptions;
 using rocksdb::CompactionFilter;
 using rocksdb::CompactionFilterFactory;
 using rocksdb::CompactionFilterContext;
+using rocksdb::CompactionGuard;
 using rocksdb::CompactionJobInfo;
 using rocksdb::CompactionOptionsFIFO;
 using rocksdb::Comparator;
@@ -2681,6 +2683,58 @@ void crocksdb_options_set_compaction_priority(crocksdb_options_t *opt,
 
 void crocksdb_options_set_delayed_write_rate(crocksdb_options_t *opt, uint64_t delayed_write_rate) {
   opt->rep.delayed_write_rate = delayed_write_rate;
+}
+
+struct crocksdb_compactionguard_t : public CompactionGuard {
+  void* state_;
+  void (*destructor_)(void*);
+  char** (*get_guards_in_range_)(void*, const char* start, size_t start_len,
+                                 const char* end, size_t end_len, size_t* total,
+                                 size_t** lens);
+
+  virtual ~crocksdb_compactionguard_t() { (*destructor_)(state_); }
+
+  virtual std::vector<std::string> GetGuardsInRange(Slice* start, Slice* end) {
+    size_t total = 0;
+    size_t* lens;
+    char** res =
+        (*get_guards_in_range_)(state_, start->data(), start->size(),
+                                end->data(), end->size(), &total, &lens);
+
+    std::vector<std::string> guards;
+    for (size_t i = 0; i < total; i++) {
+      guards.push_back(std::string(res[i], lens[i]));
+      free(res[i]);
+    }
+
+    if (total > 0) {
+      free(res);
+      free(lens);
+    }
+
+    return guards;
+  }
+};
+
+void crocksdb_options_set_compaction_guard(crocksdb_options_t* opt,
+                                           crocksdb_compactionguard_t* guard) {
+  opt->rep.compaction_guard = guard;
+}
+
+crocksdb_compactionguard_t* crocksdb_compactionguard_create(
+    void* state, void (*destructor)(void*),
+    char** (*get_guards_in_range)(void*, const char* start, size_t start_len,
+                                  const char* end, size_t end_len,
+                                  size_t* total, size_t** lens)) {
+  crocksdb_compactionguard_t* result = new crocksdb_compactionguard_t;
+  result->state_ = state;
+  result->destructor_ = destructor;
+  result->get_guards_in_range_ = get_guards_in_range;
+  return result;
+}
+
+void crocksdb_compactionguard_destory(crocksdb_compactionguard_t* guard) {
+  delete guard;
 }
 
 char *crocksdb_options_statistics_get_string(crocksdb_options_t *opt) {

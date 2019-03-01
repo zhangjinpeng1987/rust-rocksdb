@@ -54,6 +54,7 @@ pub use table_properties_collector_factory::TablePropertiesCollectorFactory;
 pub use titan::{TitanBlobIndex, TitanDBOptions};
 
 mod compaction_filter;
+mod compaction_guard;
 pub mod comparator;
 mod event_listener;
 pub mod merge_operator;
