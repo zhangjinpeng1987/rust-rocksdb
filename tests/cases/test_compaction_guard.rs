@@ -11,8 +11,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-use std::sync::Arc;
 use rocksdb::{ColumnFamilyOptions, CompactionGuard, DBOptions, Writable, DB};
+use std::sync::Arc;
 use tempdir::TempDir;
 
 struct SimpleGuards {

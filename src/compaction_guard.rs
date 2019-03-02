@@ -1,7 +1,7 @@
 use crocksdb_ffi::{self, DBCompactionGuard};
 use libc::c_void;
-use std::{mem, slice};
 use std::sync::Arc;
+use std::{mem, slice};
 
 /// `CompactionGuard` allows an application to provide guards for compaction.
 pub trait CompactionGuard {
