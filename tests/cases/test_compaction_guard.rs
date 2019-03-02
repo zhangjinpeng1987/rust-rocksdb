@@ -11,6 +11,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+use std::sync::Arc;
 use rocksdb::{ColumnFamilyOptions, CompactionGuard, DBOptions, Writable, DB};
 use tempdir::TempDir;
 
@@ -31,7 +32,7 @@ fn test_compaction_guard() {
     let mut guards = vec![];
     guards.push(b"k5".to_vec());
     cf_opts
-        .set_compaction_guard(Box::new(SimpleGuards { guards: guards }))
+        .set_compaction_guard(Arc::new(Box::new(SimpleGuards { guards: guards })))
         .unwrap();
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);

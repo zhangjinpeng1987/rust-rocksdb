@@ -1,6 +1,7 @@
 use crocksdb_ffi::{self, DBCompactionGuard};
 use libc::c_void;
 use std::{mem, slice};
+use std::sync::Arc;
 
 /// `CompactionGuard` allows an application to provide guards for compaction.
 pub trait CompactionGuard {
@@ -9,7 +10,7 @@ pub trait CompactionGuard {
 
 #[repr(C)]
 pub struct CompactionGuardProxy {
-    guard: Box<CompactionGuard>,
+    guard: Arc<Box<CompactionGuard>>,
 }
 
 extern "C" fn destructor(guard: *mut c_void) {
@@ -66,7 +67,7 @@ impl Drop for CompactionGuardHandle {
 }
 
 pub unsafe fn new_compaction_gurad(
-    g: Box<CompactionGuard>,
+    g: Arc<Box<CompactionGuard>>,
 ) -> Result<CompactionGuardHandle, String> {
     let proxy = Box::into_raw(Box::new(CompactionGuardProxy { guard: g }));
     let res = crocksdb_ffi::crocksdb_compactionguard_create(
