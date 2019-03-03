@@ -10,7 +10,7 @@ pub trait CompactionGuard {
 
 #[repr(C)]
 pub struct CompactionGuardProxy {
-    guard: Arc<Box<CompactionGuard>>,
+    guard: Arc<CompactionGuard>,
 }
 
 extern "C" fn destructor(guard: *mut c_void) {
@@ -67,7 +67,7 @@ impl Drop for CompactionGuardHandle {
 }
 
 pub unsafe fn new_compaction_gurad(
-    g: Arc<Box<CompactionGuard>>,
+    g: Arc<CompactionGuard>,
 ) -> Result<CompactionGuardHandle, String> {
     let proxy = Box::into_raw(Box::new(CompactionGuardProxy { guard: g }));
     let res = crocksdb_ffi::crocksdb_compactionguard_create(

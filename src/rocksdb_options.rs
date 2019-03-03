@@ -1137,7 +1137,7 @@ impl ColumnFamilyOptions {
         }
     }
 
-    pub fn set_compaction_guard(&mut self, guard: Arc<Box<CompactionGuard>>) -> Result<(), String> {
+    pub fn set_compaction_guard(&mut self, guard: Arc<CompactionGuard>) -> Result<(), String> {
         unsafe {
             self.guard = Some(new_compaction_gurad(guard)?);
             crocksdb_ffi::crocksdb_options_set_compaction_guard(

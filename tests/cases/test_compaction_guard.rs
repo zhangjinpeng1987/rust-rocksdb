@@ -32,7 +32,7 @@ fn test_compaction_guard() {
     let mut guards = vec![];
     guards.push(b"k5".to_vec());
     cf_opts
-        .set_compaction_guard(Arc::new(Box::new(SimpleGuards { guards: guards })))
+        .set_compaction_guard(Arc::new(SimpleGuards { guards: guards }))
         .unwrap();
     let mut opts = DBOptions::new();
     opts.create_if_missing(true);
