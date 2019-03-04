@@ -2688,6 +2688,7 @@ void crocksdb_options_set_delayed_write_rate(crocksdb_options_t *opt, uint64_t d
 struct crocksdb_compactionguard_t : public CompactionGuard {
   void* state_;
   void (*destructor_)(void*);
+  void (*clean_guard_)(void*);
   char** (*get_guards_in_range_)(void*, const char* start, uint32_t start_len,
                                  const char* end, uint32_t end_len, uint32_t* total,
                                  uint32_t** lens);
@@ -2716,12 +2717,12 @@ struct crocksdb_compactionguard_t : public CompactionGuard {
     std::vector<std::string> guards;
     for (size_t i = 0; i < total; i++) {
       guards.push_back(std::string(res[i], lens[i]));
-      free(res[i]);
+      clean_guard_(res[i]);
     }
 
     if (total > 0) {
-      free(res);
-      free(lens);
+      clean_guard_(res);
+      clean_guard_(lens);
     }
 
     return guards;
@@ -2734,13 +2735,14 @@ void crocksdb_options_set_compaction_guard(crocksdb_options_t* opt,
 }
 
 crocksdb_compactionguard_t* crocksdb_compactionguard_create(
-    void* state, void (*destructor)(void*),
+    void* state, void (*destructor)(void*), void (*clean_guard)(void*),
     char** (*get_guards_in_range)(void*, const char* start, uint32_t start_len,
                                   const char* end, uint32_t end_len,
                                   uint32_t* total, uint32_t** lens)) {
   crocksdb_compactionguard_t* result = new crocksdb_compactionguard_t;
   result->state_ = state;
   result->destructor_ = destructor;
+  result->clean_guard_ = clean_guard;
   result->get_guards_in_range_ = get_guards_in_range;
   return result;
 }

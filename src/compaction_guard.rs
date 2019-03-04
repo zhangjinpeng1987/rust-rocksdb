@@ -19,6 +19,12 @@ extern "C" fn destructor(guard: *mut c_void) {
     }
 }
 
+extern "C" fn clean_guard(m: *mut c_void) {
+    unsafe {
+        libc::free(m);
+    }
+}
+
 extern "C" fn get_guards_in_range(
     guard: *mut c_void,
     start: *const u8,
@@ -40,6 +46,7 @@ extern "C" fn get_guards_in_range(
             let mut l = libc::malloc(*total as usize * mem::size_of::<u32>()) as *mut u32;
             *lens = l;
             for key in guards.drain(..) {
+                assert!(!key.is_empty());
                 let cloned = libc::malloc(key.len());
                 libc::memcpy(cloned, key.as_ptr() as *const c_void, key.len());
                 *res = cloned as *mut u8;
@@ -73,6 +80,7 @@ pub unsafe fn new_compaction_gurad(
     let res = crocksdb_ffi::crocksdb_compactionguard_create(
         proxy as *mut c_void,
         destructor,
+        clean_guard,
         get_guards_in_range,
     );
     Ok(CompactionGuardHandle { inner: res })

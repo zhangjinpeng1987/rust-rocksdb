@@ -31,6 +31,7 @@ fn test_compaction_guard() {
     let mut cf_opts = ColumnFamilyOptions::new();
     let mut guards = vec![];
     guards.push(b"k5".to_vec());
+    guards.push(b"k8".to_vec());
     cf_opts
         .set_compaction_guard(Arc::new(SimpleGuards { guards: guards }))
         .unwrap();
@@ -69,6 +70,6 @@ fn test_compaction_guard() {
     db.compact_range(None, None);
     assert_eq!(
         db.get_property_int("rocksdb.num-files-at-level1").unwrap(),
-        2
+        3
     );
 }

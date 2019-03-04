@@ -1160,6 +1160,7 @@ extern "C" {
     pub fn crocksdb_compactionguard_create(
         state: *mut c_void,
         destructor: extern "C" fn(*mut c_void),
+        clean_guard: extern "C" fn(*mut c_void),
         get_gurads_in_range: extern "C" fn(
             *mut c_void,
             *const u8,
