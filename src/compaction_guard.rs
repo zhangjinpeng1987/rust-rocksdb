@@ -42,7 +42,7 @@ extern "C" fn get_guards_in_range(
 
         *total = guards.len() as u32;
         if *total > 0 {
-            let mut res = libc::malloc(*total as usize) as *mut *mut u8;
+            let mut res = libc::malloc(*total as usize * mem::size_of::<*mut u8>()) as *mut *mut u8;
             let mut l = libc::malloc(*total as usize * mem::size_of::<u32>()) as *mut u32;
             *lens = l;
             for key in guards.drain(..) {
