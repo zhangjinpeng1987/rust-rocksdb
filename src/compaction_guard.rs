@@ -40,6 +40,7 @@ extern "C" fn get_guards_in_range(
         let start = slice::from_raw_parts(start, start_len as usize);
         let end = slice::from_raw_parts(end, end_len as usize);
         let mut guards = guard.guard.get_guards_in_range(start, end);
+        eprintln!("after call get_guards_in_range in rust");
 
         *total = guards.len() as u32;
         if *total > 0 {
