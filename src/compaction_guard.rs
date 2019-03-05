@@ -67,9 +67,9 @@ pub struct CompactionGuardHandle {
 
 impl Drop for CompactionGuardHandle {
     fn drop(&mut self) {
-        unsafe {
-            crocksdb_ffi::crocksdb_compactionguard_destory(self.inner);
-        }
+        //        unsafe {
+        //            crocksdb_ffi::crocksdb_compactionguard_destory(self.inner);
+        //        }
     }
 }
 
