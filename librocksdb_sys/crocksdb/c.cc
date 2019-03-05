@@ -2693,12 +2693,9 @@ struct crocksdb_compactionguard_t : public CompactionGuard {
                                  const char* end, uint32_t end_len, uint32_t* total,
                                  uint32_t** lens);
 
-  virtual ~crocksdb_compactionguard_t() { (*destructor_)(state_); }
+  virtual ~crocksdb_compactionguard_t() { destructor_(state_); }
 
   virtual std::vector<std::string> GetGuardsInRange(Slice* start, Slice* end) {
-    fprintf(stderr, "call GetGuardsInRange, get_guards_in_range_ = %p",
-            get_guards_in_range_);
-
     const char* s = nullptr;
     const char* e = nullptr;
     uint32_t s_len = 0, e_len = 0;
@@ -2715,7 +2712,7 @@ struct crocksdb_compactionguard_t : public CompactionGuard {
     uint32_t total = 0;
     uint32_t* lens;
     char** res =
-        (*get_guards_in_range_)(state_, s, s_len, e, e_len, &total, &lens);
+        get_guards_in_range_(state_, s, s_len, e, e_len, &total, &lens);
 
     std::vector<std::string> guards;
     for (size_t i = 0; i < total; i++) {

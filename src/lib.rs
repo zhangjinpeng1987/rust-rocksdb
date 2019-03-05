@@ -17,7 +17,6 @@ extern crate core;
 extern crate libc;
 #[macro_use]
 pub extern crate librocksdb_sys;
-extern crate chrono;
 #[cfg(test)]
 extern crate tempdir;
 

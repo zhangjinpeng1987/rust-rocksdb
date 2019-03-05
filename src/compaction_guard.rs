@@ -1,4 +1,3 @@
-use chrono::Utc;
 use crocksdb_ffi::{self, DBCompactionGuard};
 use libc::c_void;
 use std::sync::Arc;
@@ -35,20 +34,11 @@ extern "C" fn get_guards_in_range(
     total: *mut u32,
     lens: *mut *mut u32,
 ) -> *mut *mut u8 {
-    let now = Utc::now();
-    eprintln!(
-        "{}, call get_guards_in_range, guard {:?}, start {:?}, end {:?}",
-        now.format("%Y-%m-%d-%H:%M:%S"),
-        guard,
-        start,
-        end
-    );
     unsafe {
         let guard = &mut *(guard as *mut CompactionGuardProxy);
         let start = slice::from_raw_parts(start, start_len as usize);
         let end = slice::from_raw_parts(end, end_len as usize);
         let mut guards = guard.guard.get_guards_in_range(start, end);
-        eprintln!("after call get_guards_in_range in rust");
 
         *total = guards.len() as u32;
         if *total > 0 {
@@ -64,10 +54,8 @@ extern "C" fn get_guards_in_range(
                 *l = key.len() as u32;
                 l = l.add(1);
             }
-            eprintln!("before return 1");
             res.sub(*total as usize)
         } else {
-            eprintln!("before return 2");
             0 as *mut *mut u8
         }
     }
