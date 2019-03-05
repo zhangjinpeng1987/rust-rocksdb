@@ -22,6 +22,7 @@ sse = ["librocksdb_sys/sse"]
 [dependencies]
 libc = "0.2.11"
 crc = "1.2"
+chrono = "0.4"
 
 [dependencies.librocksdb_sys]
 path = "librocksdb_sys"
