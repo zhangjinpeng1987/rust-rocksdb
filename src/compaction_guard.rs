@@ -34,6 +34,7 @@ extern "C" fn get_guards_in_range(
     total: *mut u32,
     lens: *mut *mut u32,
 ) -> *mut *mut u8 {
+    info!("call get_guards_in_range, guard {:?}, start {:?}, end {:?}", guard, start, end);
     unsafe {
         let guard = &mut *(guard as *mut CompactionGuardProxy);
         let start = slice::from_raw_parts(start, start_len as usize);
