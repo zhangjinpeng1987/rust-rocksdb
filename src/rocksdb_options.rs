@@ -1255,6 +1255,12 @@ impl ColumnFamilyOptions {
         }
     }
 
+    pub fn set_level_zero_split_size(&mut self, size: u64) {
+        unsafe {
+            crocksdb_ffi::crocksdb_options_set_level0_split_size(self.inner, size);
+        }
+    }
+
     pub fn set_max_bytes_for_level_base(&mut self, size: u64) {
         unsafe {
             crocksdb_ffi::crocksdb_options_set_max_bytes_for_level_base(self.inner, size);

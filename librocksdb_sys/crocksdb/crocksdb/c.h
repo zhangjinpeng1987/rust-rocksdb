@@ -835,6 +835,8 @@ extern C_ROCKSDB_LIBRARY_API void crocksdb_options_set_info_log_level(
     crocksdb_options_t*, int);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_options_set_write_buffer_size(
     crocksdb_options_t*, size_t);
+extern C_ROCKSDB_LIBRARY_API void crocksdb_options_set_level0_split_size(
+    crocksdb_options_t*, size_t);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_options_set_db_write_buffer_size(
     crocksdb_options_t*, size_t);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_options_set_max_open_files(

@@ -2191,6 +2191,10 @@ void crocksdb_options_set_write_buffer_size(crocksdb_options_t* opt, size_t s) {
   opt->rep.write_buffer_size = s;
 }
 
+void crocksdb_options_set_level0_split_size(crocksdb_options_t* opt, size_t s) {
+  opt->rep.level0_split_size = s;
+}
+
 void crocksdb_options_set_max_open_files(crocksdb_options_t* opt, int n) {
   opt->rep.max_open_files = n;
 }
