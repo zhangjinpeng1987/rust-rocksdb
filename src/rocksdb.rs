@@ -659,18 +659,18 @@ impl DB {
         &self.path
     }
 
-    pub fn write_opt(&self, batch: WriteBatch, writeopts: &WriteOptions) -> Result<(), String> {
+    pub fn write_opt(&self, batch: &WriteBatch, writeopts: &WriteOptions) -> Result<(), String> {
         unsafe {
             ffi_try!(crocksdb_write(self.inner, writeopts.inner, batch.inner));
         }
         Ok(())
     }
 
-    pub fn write(&self, batch: WriteBatch) -> Result<(), String> {
+    pub fn write(&self, batch: &WriteBatch) -> Result<(), String> {
         self.write_opt(batch, &WriteOptions::new())
     }
 
-    pub fn write_without_wal(&self, batch: WriteBatch) -> Result<(), String> {
+    pub fn write_without_wal(&self, batch: &WriteBatch) -> Result<(), String> {
         let mut wo = WriteOptions::new();
         wo.disable_wal(true);
         self.write_opt(batch, &wo)
