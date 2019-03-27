@@ -2396,7 +2396,7 @@ mod test {
         assert_eq!(batch.count(), 1);
         assert!(!batch.is_empty());
         assert!(db.get(b"k1").unwrap().is_none());
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"k1");
         assert_eq!(r.unwrap().unwrap(), b"v1111");
@@ -2406,7 +2406,7 @@ mod test {
         let _ = batch.delete(b"k1");
         assert_eq!(batch.count(), 1);
         assert!(!batch.is_empty());
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         assert!(db.get(b"k1").unwrap().is_none());
 
@@ -2431,7 +2431,7 @@ mod test {
         batch.put(b"k13", b"v13").unwrap();
         batch.rollback_to_save_point().unwrap();
         batch.rollback_to_save_point().unwrap();
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"k9");
         assert!(r.unwrap().is_none());
