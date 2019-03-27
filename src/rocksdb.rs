@@ -1686,6 +1686,13 @@ impl WriteBatch {
         }
         Ok(())
     }
+
+    pub fn pop_save_point(&mut self) -> Result<(), String> {
+        unsafe {
+            ffi_try!(crocksdb_writebatch_pop_save_point(self.inner));
+        }
+        Ok(())
+    }
 }
 
 impl Drop for WriteBatch {
@@ -2412,6 +2419,9 @@ mod test {
 
         // test save point
         let mut batch = WriteBatch::new();
+        batch.put(b"k9", b"v9").unwrap();
+        batch.set_save_point();
+        batch.pop_save_point();
         batch.put(b"k10", b"v10").unwrap();
         batch.set_save_point();
         batch.put(b"k11", b"v11").unwrap();
@@ -2423,6 +2433,8 @@ mod test {
         batch.rollback_to_save_point().unwrap();
         let p = db.write(batch);
         assert!(p.is_ok());
+        let r = db.get(b"k9");
+        assert!(r.unwrap().is_none());
         let r = db.get(b"k10");
         assert_eq!(r.unwrap().unwrap(), b"v10");
         let r = db.get(b"k11");
