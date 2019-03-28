@@ -2448,7 +2448,7 @@ mod test {
         let batch = WriteBatch::with_capacity(1024);
         batch.put(b"kc1", b"v1").unwrap();
         batch.put(b"kc2", b"v2").unwrap();
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"kc1");
         assert!(r.unwrap().is_some());
