@@ -1230,6 +1230,8 @@ extern C_ROCKSDB_LIBRARY_API void crocksdb_readoptions_set_iterate_lower_bound(
     crocksdb_readoptions_t*, const char* key, size_t keylen);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_readoptions_set_iterate_upper_bound(
     crocksdb_readoptions_t*, const char* key, size_t keylen);
+extern C_ROCKSDB_LIBRARY_API void crocksdb_readoptions_set_iterate_prefix(
+    crocksdb_readoptions_t*, const char* prefix, size_t keylen);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_readoptions_set_read_tier(
     crocksdb_readoptions_t*, int);
 extern C_ROCKSDB_LIBRARY_API void crocksdb_readoptions_set_tailing(

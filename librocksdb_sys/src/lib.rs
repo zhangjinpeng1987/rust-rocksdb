@@ -658,6 +658,11 @@ extern "C" {
         k: *const u8,
         kLen: size_t,
     );
+    pub fn crocksdb_readoptions_set_iterate_prefix(
+        readopts: *mut DBReadOptions,
+        k: *const u8,
+        kLen: size_t,
+    );
     pub fn crocksdb_readoptions_set_read_tier(readopts: *mut DBReadOptions, tier: c_int);
     pub fn crocksdb_readoptions_set_tailing(readopts: *mut DBReadOptions, v: bool);
     pub fn crocksdb_readoptions_set_managed(readopts: *mut DBReadOptions, v: bool);

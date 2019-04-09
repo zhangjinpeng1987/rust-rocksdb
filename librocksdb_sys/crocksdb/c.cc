@@ -189,6 +189,7 @@ struct crocksdb_readoptions_t {
    ReadOptions rep;
    Slice upper_bound; // stack variable to set pointer to in ReadOptions
    Slice lower_bound;
+   Slice prefix;
 };
 struct crocksdb_writeoptions_t    { WriteOptions      rep; };
 struct crocksdb_options_t         { Options           rep; };
@@ -3092,6 +3093,17 @@ void crocksdb_readoptions_set_iterate_upper_bound(
   } else {
     opt->upper_bound = Slice(key, keylen);
     opt->rep.iterate_upper_bound = &opt->upper_bound;
+  }
+}
+
+void crocksdb_readoptions_set_iterate_prefix(crocksdb_readoptions_t* opt,
+                                             const char* key, size_t keylen) {
+  if (key == nullptr) {
+    opt->prefix = Slice();
+    opt->rep.prefix = nullptr;
+  } else {
+    opt->prefix = Slice(key, keylen);
+    opt->rep.prefix = &opt->prefix;
   }
 }
 

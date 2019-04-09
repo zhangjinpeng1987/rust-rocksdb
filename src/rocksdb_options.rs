@@ -263,6 +263,7 @@ pub struct ReadOptions {
     inner: *mut DBReadOptions,
     lower_bound: Vec<u8>,
     upper_bound: Vec<u8>,
+    prefix: Vec<u8>,
 }
 
 impl Drop for ReadOptions {
@@ -280,6 +281,7 @@ impl Default for ReadOptions {
                 inner: opts,
                 lower_bound: vec![],
                 upper_bound: vec![],
+                prefix: vec![],
             }
         }
     }
@@ -329,6 +331,17 @@ impl ReadOptions {
                 self.inner,
                 self.upper_bound.as_ptr(),
                 self.upper_bound.len(),
+            );
+        }
+    }
+
+    pub fn set_iterate_prefix(&mut self, prefix: &[u8]) {
+        self.prefix = Vec::from(prefix);
+        unsafe {
+            crocksdb_ffi::crocksdb_readoptions_set_iterate_prefix(
+                self.inner,
+                self.prefix.as_ptr(),
+                self.prefix.len(),
             );
         }
     }
