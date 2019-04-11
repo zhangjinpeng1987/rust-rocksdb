@@ -261,8 +261,8 @@ impl UnsafeSnap {
 
 pub struct ReadOptions {
     inner: *mut DBReadOptions,
-    lower_bound: Vec<u8>,
-    upper_bound: Vec<u8>,
+    lower_bound: Option<Vec<u8>>,
+    upper_bound: Option<Vec<u8>>,
 }
 
 impl Drop for ReadOptions {
@@ -278,8 +278,8 @@ impl Default for ReadOptions {
             assert!(!opts.is_null(), "Unable to create rocksdb read options");
             ReadOptions {
                 inner: opts,
-                lower_bound: vec![],
-                upper_bound: vec![],
+                lower_bound: None,
+                upper_bound: None,
             }
         }
     }
@@ -312,25 +312,33 @@ impl ReadOptions {
     }
 
     pub fn set_iterate_lower_bound(&mut self, key: &[u8]) {
-        self.lower_bound = Vec::from(key);
+        self.lower_bound = Some(Vec::from(key));
         unsafe {
             crocksdb_ffi::crocksdb_readoptions_set_iterate_lower_bound(
                 self.inner,
-                self.lower_bound.as_ptr(),
-                self.lower_bound.len(),
+                self.lower_bound.as_ref().unwrap().as_ptr(),
+                self.lower_bound.as_ref().unwrap().len(),
             );
         }
     }
 
+    pub fn iterate_lower_bound(&self) -> Option<&[u8]> {
+        self.lower_bound.as_ref().map(|v| v.as_slice())
+    }
+
     pub fn set_iterate_upper_bound(&mut self, key: &[u8]) {
-        self.upper_bound = Vec::from(key);
+        self.upper_bound = Some(Vec::from(key));
         unsafe {
             crocksdb_ffi::crocksdb_readoptions_set_iterate_upper_bound(
                 self.inner,
-                self.upper_bound.as_ptr(),
-                self.upper_bound.len(),
+                self.upper_bound.as_ref().unwrap().as_ptr(),
+                self.upper_bound.as_ref().unwrap().len(),
             );
         }
+    }
+
+    pub fn iterate_upper_bound(&self) -> Option<&[u8]> {
+        self.upper_bound.as_ref().map(|v| v.as_slice())
     }
 
     pub fn set_read_tier(&mut self, tier: c_int) {
