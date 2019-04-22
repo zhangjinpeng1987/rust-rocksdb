@@ -343,8 +343,8 @@ impl ReadOptions {
         &self.upper_bound
     }
 
-    pub fn set_iterate_prefix(&mut self, prefix: &[u8]) {
-        self.prefix = Vec::from(prefix);
+    pub fn set_iterate_prefix(&mut self, prefix: Vec<u8>) {
+        self.prefix = prefix;
         unsafe {
             crocksdb_ffi::crocksdb_readoptions_set_iterate_prefix(
                 self.inner,
