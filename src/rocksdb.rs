@@ -89,6 +89,8 @@ fn build_cstring_list(str_list: &[&str]) -> Vec<CString> {
 pub struct DB {
     inner: *mut DBInstance,
     cfs: BTreeMap<String, CFHandle>,
+    cfs_name: Vec<String>,
+    cfs_handle: Vec<CFHandle>,
     path: String,
     opts: DBOptions,
     _cf_opts: Vec<ColumnFamilyOptions>,
@@ -589,20 +591,41 @@ impl DB {
             return Err(ERR_NULL_DB_ONINIT.to_owned());
         }
 
-        let cfs = names
-            .into_iter()
-            .zip(cf_handles)
-            .map(|(s, h)| (s.to_owned(), CFHandle { inner: h }))
-            .collect();
+        if names.len() > 8 {
+            let cfs = names
+                .into_iter()
+                .zip(cf_handles)
+                .map(|(s, h)| (s.to_owned(), CFHandle { inner: h }))
+                .collect();
 
-        Ok(DB {
-            inner: db,
-            cfs: cfs,
-            path: path.to_owned(),
-            opts: opts,
-            _cf_opts: options,
-            readonly: readonly,
-        })
+            Ok(DB {
+                inner: db,
+                cfs: cfs,
+                cfs_name: vec![],
+                cfs_handle: vec![],
+                path: path.to_owned(),
+                opts: opts,
+                _cf_opts: options,
+                readonly: readonly,
+            })
+        } else {
+            let cfs_name = names.into_iter().map(|n| n.to_owned()).collect();
+            let cfs_handle = cf_handles
+                .into_iter()
+                .map(|h| CFHandle { inner: h })
+                .collect();
+
+            Ok(DB {
+                inner: db,
+                cfs: BTreeMap::new(),
+                cfs_name,
+                cfs_handle,
+                path: path.to_owned(),
+                opts: opts,
+                _cf_opts: options,
+                readonly: readonly,
+            })
+        }
     }
 
     pub fn destroy(opts: &DBOptions, path: &str) -> Result<(), String> {
@@ -780,12 +803,35 @@ impl DB {
     }
 
     pub fn cf_handle(&self, name: &str) -> Option<&CFHandle> {
-        self.cfs.get(name)
+        if !self.cfs_name.is_empty() {
+            // Find in Vec
+            let mut pos = 0;
+            let mut found = false;
+            for (i, name_) in self.cfs_name.iter().enumerate() {
+                if name == name_ {
+                    found = true;
+                    pos = i;
+                    break;
+                }
+            }
+            if found {
+                Some(&self.cfs_handle[pos])
+            } else {
+                None
+            }
+        } else {
+            // Find in BTreeMap
+            self.cfs.get(name)
+        }
     }
 
     /// get all column family names, including 'default'.
     pub fn cf_names(&self) -> Vec<&str> {
-        self.cfs.iter().map(|(k, _)| k.as_str()).collect()
+        if !self.cfs_name.is_empty() {
+            self.cfs_name.iter().map(|name| name.as_str()).collect()
+        } else {
+            self.cfs.iter().map(|(k, _)| k.as_str()).collect()
+        }
     }
 
     pub fn iter(&self) -> DBIterator<&DB> {
