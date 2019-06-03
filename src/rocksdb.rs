@@ -779,17 +779,63 @@ impl DB {
             ));
             let handle = CFHandle { inner: cf_handler };
             self._cf_opts.push(cfd.options);
-            Ok(match self.cfs.entry(cfd.name.to_owned()) {
-                Entry::Occupied(mut e) => {
-                    e.insert(handle);
-                    e.into_mut()
+
+            if !self.cfs_handle.is_empty() {
+                let pos = self.cf_pos(cfd.name);
+                if pos.is_some() {
+                    let pos = pos.unwrap();
+                    self.cfs_handle[pos] = handle;
+                    Ok(&self.cfs_handle[pos])
+                } else {
+                    self.cfs_name.push(cfd.name.to_owned());
+                    self.cfs_handle.push(handle);
+                    Ok(&self.cfs_handle[self.cfs_handle.len()-1])
                 }
-                Entry::Vacant(e) => e.insert(handle),
-            })
+            } else {
+                Ok(match self.cfs.entry(cfd.name.to_owned()) {
+                    Entry::Occupied(mut e) => {
+                        e.insert(handle);
+                        e.into_mut()
+                    }
+                    Entry::Vacant(e) => e.insert(handle),
+                })
+            }
+        }
+    }
+
+    fn cf_pos(&self, name: &str) -> Option<usize> {
+        let mut found = false;
+        let mut pos = 0;
+        for (i, name_) in self.cfs_name.iter().enumerate() {
+            if name == name_ {
+                found = true;
+                pos = i;
+                break;
+            }
+        }
+        if found {
+            Some(pos)
+        } else {
+            None
         }
     }
 
     pub fn drop_cf(&mut self, name: &str) -> Result<(), String> {
+        if !self.cfs_name.is_empty() {
+            let pos = self.cf_pos(name);
+            if pos.is_some() {
+                let pos = pos.unwrap();
+                let _ = self.cfs_name.swap_remove(pos);
+                let cf = self.cfs_handle.swap_remove(pos);
+                unsafe {
+                    ffi_try!(crocksdb_drop_column_family(self.inner, cf.inner));
+                }
+                return Ok(())
+            } else {
+                return Err(format!("Invalid column family: {}", name).clone());
+            }
+        }
+
         let cf = self.cfs.remove(name);
         if cf.is_none() {
             return Err(format!("Invalid column family: {}", name).clone());
@@ -805,17 +851,9 @@ impl DB {
     pub fn cf_handle(&self, name: &str) -> Option<&CFHandle> {
         if !self.cfs_name.is_empty() {
             // Find in Vec
-            let mut pos = 0;
-            let mut found = false;
-            for (i, name_) in self.cfs_name.iter().enumerate() {
-                if name == name_ {
-                    found = true;
-                    pos = i;
-                    break;
-                }
-            }
-            if found {
-                Some(&self.cfs_handle[pos])
+            let pos = self.cf_pos(name);
+            if pos.is_some() {
+                Some(&self.cfs_handle[pos.unwrap()])
             } else {
                 None
             }
@@ -1776,6 +1814,7 @@ impl Drop for DB {
             self.sync_wal().unwrap_or_else(|_| {});
         }
         unsafe {
+            self.cfs_handle.clear();
             self.cfs.clear();
             crocksdb_ffi::crocksdb_close(self.inner);
         }
