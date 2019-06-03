@@ -86,11 +86,15 @@ fn build_cstring_list(str_list: &[&str]) -> Vec<CString> {
         .collect()
 }
 
+struct CFHandleInfo {
+    pub name: String,
+    pub handle: CFHandle,
+}
+
 pub struct DB {
     inner: *mut DBInstance,
     cfs: BTreeMap<String, CFHandle>,
-    cfs_name: Vec<String>,
-    cfs_handle: Vec<CFHandle>,
+    cfs_handle: Vec<CFHandleInfo>,
     path: String,
     opts: DBOptions,
     _cf_opts: Vec<ColumnFamilyOptions>,
@@ -601,7 +605,6 @@ impl DB {
             Ok(DB {
                 inner: db,
                 cfs: cfs,
-                cfs_name: vec![],
                 cfs_handle: vec![],
                 path: path.to_owned(),
                 opts: opts,
@@ -609,16 +612,15 @@ impl DB {
                 readonly: readonly,
             })
         } else {
-            let cfs_name = names.into_iter().map(|n| n.to_owned()).collect();
-            let cfs_handle = cf_handles
+            let cfs_handle = names
                 .into_iter()
-                .map(|h| CFHandle { inner: h })
+                .zip(cf_handles)
+                .map(|(s, h)| CFHandleInfo{ name: s.to_owned(), handle: CFHandle { inner: h }})
                 .collect();
 
             Ok(DB {
                 inner: db,
                 cfs: BTreeMap::new(),
-                cfs_name,
                 cfs_handle,
                 path: path.to_owned(),
                 opts: opts,
@@ -784,12 +786,11 @@ impl DB {
                 let pos = self.cf_pos(cfd.name);
                 if pos.is_some() {
                     let pos = pos.unwrap();
-                    self.cfs_handle[pos] = handle;
-                    Ok(&self.cfs_handle[pos])
+                    self.cfs_handle[pos].handle = handle;
+                    Ok(&self.cfs_handle[pos].handle)
                 } else {
-                    self.cfs_name.push(cfd.name.to_owned());
-                    self.cfs_handle.push(handle);
-                    Ok(&self.cfs_handle[self.cfs_handle.len()-1])
+                    self.cfs_handle.push(CFHandleInfo{ name: cfd.name.to_owned(), handle });
+                    Ok(&self.cfs_handle[self.cfs_handle.len()-1].handle)
                 }
             } else {
                 Ok(match self.cfs.entry(cfd.name.to_owned()) {
@@ -806,8 +807,8 @@ impl DB {
     fn cf_pos(&self, name: &str) -> Option<usize> {
         let mut found = false;
         let mut pos = 0;
-        for (i, name_) in self.cfs_name.iter().enumerate() {
-            if name == name_ {
+        for (i, info) in self.cfs_handle.iter().enumerate() {
+            if name == info.name {
                 found = true;
                 pos = i;
                 break;
@@ -821,14 +822,13 @@ impl DB {
     }
 
     pub fn drop_cf(&mut self, name: &str) -> Result<(), String> {
-        if !self.cfs_name.is_empty() {
+        if !self.cfs_handle.is_empty() {
             let pos = self.cf_pos(name);
             if pos.is_some() {
                 let pos = pos.unwrap();
-                let _ = self.cfs_name.swap_remove(pos);
                 let cf = self.cfs_handle.swap_remove(pos);
                 unsafe {
-                    ffi_try!(crocksdb_drop_column_family(self.inner, cf.inner));
+                    ffi_try!(crocksdb_drop_column_family(self.inner, cf.handle.inner));
                 }
                 return Ok(())
             } else {
@@ -849,11 +849,11 @@ impl DB {
     }
 
     pub fn cf_handle(&self, name: &str) -> Option<&CFHandle> {
-        if !self.cfs_name.is_empty() {
+        if !self.cfs_handle.is_empty() {
             // Find in Vec
             let pos = self.cf_pos(name);
             if pos.is_some() {
-                Some(&self.cfs_handle[pos.unwrap()])
+                Some(&self.cfs_handle[pos.unwrap()].handle)
             } else {
                 None
             }
@@ -865,8 +865,8 @@ impl DB {
 
     /// get all column family names, including 'default'.
     pub fn cf_names(&self) -> Vec<&str> {
-        if !self.cfs_name.is_empty() {
-            self.cfs_name.iter().map(|name| name.as_str()).collect()
+        if !self.cfs_handle.is_empty() {
+            self.cfs_handle.iter().map(|info| info.name.as_str()).collect()
         } else {
             self.cfs.iter().map(|(k, _)| k.as_str()).collect()
         }
