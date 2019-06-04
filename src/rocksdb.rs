@@ -615,7 +615,10 @@ impl DB {
             let cfs_handle = names
                 .into_iter()
                 .zip(cf_handles)
-                .map(|(s, h)| CFHandleInfo{ name: s.to_owned(), handle: CFHandle { inner: h }})
+                .map(|(s, h)| CFHandleInfo {
+                    name: s.to_owned(),
+                    handle: CFHandle { inner: h },
+                })
                 .collect();
 
             Ok(DB {
@@ -789,8 +792,11 @@ impl DB {
                     self.cfs_handle[pos].handle = handle;
                     Ok(&self.cfs_handle[pos].handle)
                 } else {
-                    self.cfs_handle.push(CFHandleInfo{ name: cfd.name.to_owned(), handle });
-                    Ok(&self.cfs_handle[self.cfs_handle.len()-1].handle)
+                    self.cfs_handle.push(CFHandleInfo {
+                        name: cfd.name.to_owned(),
+                        handle,
+                    });
+                    Ok(&self.cfs_handle[self.cfs_handle.len() - 1].handle)
                 }
             } else {
                 Ok(match self.cfs.entry(cfd.name.to_owned()) {
@@ -830,7 +836,7 @@ impl DB {
                 unsafe {
                     ffi_try!(crocksdb_drop_column_family(self.inner, cf.handle.inner));
                 }
-                return Ok(())
+                return Ok(());
             } else {
                 return Err(format!("Invalid column family: {}", name).clone());
             }
@@ -866,7 +872,10 @@ impl DB {
     /// get all column family names, including 'default'.
     pub fn cf_names(&self) -> Vec<&str> {
         if !self.cfs_handle.is_empty() {
-            self.cfs_handle.iter().map(|info| info.name.as_str()).collect()
+            self.cfs_handle
+                .iter()
+                .map(|info| info.name.as_str())
+                .collect()
         } else {
             self.cfs.iter().map(|(k, _)| k.as_str()).collect()
         }
