@@ -13,15 +13,17 @@
 // limitations under the License.
 
 use crocksdb_ffi::{
-    self, DBBackupEngine, DBCFHandle, DBCompressionType, DBEnv, DBInstance, DBPinnableSlice,
-    DBSequentialFile, DBStatisticsHistogramType, DBStatisticsTickerType, DBWriteBatch,
+    self, DBBackupEngine, DBCFHandle, DBCache, DBCompressionType, DBEnv, DBInstance,
+    DBPinnableSlice, DBSequentialFile, DBStatisticsHistogramType, DBStatisticsTickerType,
+    DBWriteBatch,
 };
 use libc::{self, c_char, c_int, c_void, size_t};
 use metadata::ColumnFamilyMetaData;
 use rocksdb_options::{
     CColumnFamilyDescriptor, ColumnFamilyDescriptor, ColumnFamilyOptions, CompactOptions,
     CompactionOptions, DBOptions, EnvOptions, FlushOptions, HistogramData,
-    IngestExternalFileOptions, ReadOptions, RestoreOptions, UnsafeSnap, WriteOptions,
+    IngestExternalFileOptions, LRUCacheOptions, ReadOptions, RestoreOptions, UnsafeSnap,
+    WriteOptions,
 };
 use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
@@ -218,6 +220,13 @@ impl<D: Deref<Target = DB>> DBIterator<D> {
         unsafe { crocksdb_ffi::crocksdb_iter_valid(self.inner) }
     }
 
+    pub fn status(&self) -> Result<(), String> {
+        unsafe {
+            ffi_try!(crocksdb_iter_get_error(self.inner));
+        }
+        Ok(())
+    }
+
     pub fn new_cf(db: D, cf_handle: &CFHandle, readopts: ReadOptions) -> DBIterator<D> {
         unsafe {
             let iterator = crocksdb_ffi::crocksdb_create_iterator_cf(
@@ -319,6 +328,11 @@ impl<D: Deref<Target = DB>> Snapshot<D> {
         }
         self.db.get_cf_opt(cf, key, &readopts)
     }
+
+    /// Get the snapshot's sequence number.
+    pub fn get_sequence_number(&self) -> u64 {
+        unsafe { crocksdb_ffi::crocksdb_get_snapshot_sequence_number(self.snap.get_inner()) }
+    }
 }
 
 impl<D: Deref<Target = DB>> Drop for Snapshot<D> {
@@ -356,7 +370,6 @@ pub struct Range<'a> {
 
 impl<'a> Range<'a> {
     pub fn new(start_key: &'a [u8], end_key: &'a [u8]) -> Range<'a> {
-        assert!(start_key <= end_key);
         Range {
             start_key: start_key,
             end_key: end_key,
@@ -659,18 +672,18 @@ impl DB {
         &self.path
     }
 
-    pub fn write_opt(&self, batch: WriteBatch, writeopts: &WriteOptions) -> Result<(), String> {
+    pub fn write_opt(&self, batch: &WriteBatch, writeopts: &WriteOptions) -> Result<(), String> {
         unsafe {
             ffi_try!(crocksdb_write(self.inner, writeopts.inner, batch.inner));
         }
         Ok(())
     }
 
-    pub fn write(&self, batch: WriteBatch) -> Result<(), String> {
+    pub fn write(&self, batch: &WriteBatch) -> Result<(), String> {
         self.write_opt(batch, &WriteOptions::new())
     }
 
-    pub fn write_without_wal(&self, batch: WriteBatch) -> Result<(), String> {
+    pub fn write_without_wal(&self, batch: &WriteBatch) -> Result<(), String> {
         let mut wo = WriteOptions::new();
         wo.disable_wal(true);
         self.write_opt(batch, &wo)
@@ -1002,6 +1015,11 @@ impl DB {
             ffi_try!(crocksdb_sync_wal(self.inner));
             Ok(())
         }
+    }
+
+    /// Get the sequence number of the most recent transaction.
+    pub fn get_latest_sequence_number(&self) -> u64 {
+        unsafe { crocksdb_ffi::crocksdb_get_latest_sequence_number(self.inner) }
     }
 
     /// Return the approximate file system space used by keys in each ranges.
@@ -1686,6 +1704,13 @@ impl WriteBatch {
         }
         Ok(())
     }
+
+    pub fn pop_save_point(&mut self) -> Result<(), String> {
+        unsafe {
+            ffi_try!(crocksdb_writebatch_pop_save_point(self.inner));
+        }
+        Ok(())
+    }
 }
 
 impl Drop for WriteBatch {
@@ -2264,6 +2289,26 @@ impl Drop for SequentialFile {
     }
 }
 
+pub struct Cache {
+    pub inner: *mut DBCache,
+}
+
+impl Cache {
+    pub fn new_lru_cache(opt: LRUCacheOptions) -> Cache {
+        Cache {
+            inner: crocksdb_ffi::new_lru_cache(opt.inner),
+        }
+    }
+}
+
+impl Drop for Cache {
+    fn drop(&mut self) {
+        unsafe {
+            crocksdb_ffi::crocksdb_cache_destroy(self.inner);
+        }
+    }
+}
+
 pub fn set_external_sst_file_global_seq_no(
     db: &DB,
     cf: &CFHandle,
@@ -2389,7 +2434,7 @@ mod test {
         assert_eq!(batch.count(), 1);
         assert!(!batch.is_empty());
         assert!(db.get(b"k1").unwrap().is_none());
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"k1");
         assert_eq!(r.unwrap().unwrap(), b"v1111");
@@ -2399,7 +2444,7 @@ mod test {
         let _ = batch.delete(b"k1");
         assert_eq!(batch.count(), 1);
         assert!(!batch.is_empty());
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         assert!(db.get(b"k1").unwrap().is_none());
 
@@ -2412,6 +2457,8 @@ mod test {
 
         // test save point
         let mut batch = WriteBatch::new();
+        batch.set_save_point();
+        batch.pop_save_point().unwrap();
         batch.put(b"k10", b"v10").unwrap();
         batch.set_save_point();
         batch.put(b"k11", b"v11").unwrap();
@@ -2421,7 +2468,7 @@ mod test {
         batch.put(b"k13", b"v13").unwrap();
         batch.rollback_to_save_point().unwrap();
         batch.rollback_to_save_point().unwrap();
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"k10");
         assert_eq!(r.unwrap().unwrap(), b"v10");
@@ -2436,7 +2483,7 @@ mod test {
         let batch = WriteBatch::with_capacity(1024);
         batch.put(b"kc1", b"v1").unwrap();
         batch.put(b"kc2", b"v2").unwrap();
-        let p = db.write(batch);
+        let p = db.write(&batch);
         assert!(p.is_ok());
         let r = db.get(b"kc1");
         assert!(r.unwrap().is_some());
@@ -2852,5 +2899,23 @@ mod test {
                 assert!(!cf_desc.options().get_level_compaction_dynamic_level_bytes());
             }
         }
+    }
+
+    #[test]
+    fn test_sequence_number() {
+        let path = TempDir::new("_rust_rocksdb_sequence_number").expect("");
+
+        let mut opts = DBOptions::new();
+        opts.create_if_missing(true);
+        let db = DB::open(opts, path.path().to_str().unwrap()).unwrap();
+
+        let snap = db.snapshot();
+        let snap_seq = snap.get_sequence_number();
+        let seq1 = db.get_latest_sequence_number();
+        assert_eq!(snap_seq, seq1);
+
+        db.put(b"key", b"value").unwrap();
+        let seq2 = db.get_latest_sequence_number();
+        assert!(seq2 > seq1);
     }
 }

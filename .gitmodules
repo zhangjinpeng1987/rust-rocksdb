@@ -1,4 +1,7 @@
 [submodule "rocksdb"]
 	path = librocksdb_sys/rocksdb
-	url = https://github.com/zhangjinpeng1987/rocksdb.git
-	branch = guards-level0
+	url = https://github.com/pingcap/rocksdb.git
+	branch = tikv-3.0
+[submodule "titan"]
+	path = librocksdb_sys/libtitan_sys/titan
+	url = https://github.com/pingcap/titan.git

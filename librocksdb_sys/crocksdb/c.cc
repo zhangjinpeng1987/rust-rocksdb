@@ -46,11 +46,13 @@
 #include "util/file_reader_writer.h"
 #include "util/coding.h"
 
-#include "rocksdb/utilities/titandb/db.h"
-#include "utilities/titandb/blob_format.h"
-#include "utilities/titandb/options.h"
+#include "titan/db.h"
+#include "titan/options.h"
+#include "src/blob_format.h"
 
 #include <stdlib.h>
+
+#include <limits>
 
 #if !defined(ROCKSDB_MAJOR) || !defined(ROCKSDB_MINOR) || !defined(ROCKSDB_PATCH)
 #error Only rocksdb 5.7.3+ is supported.
@@ -94,6 +96,7 @@ using rocksdb::FlushOptions;
 using rocksdb::IngestExternalFileOptions;
 using rocksdb::Iterator;
 using rocksdb::Logger;
+using rocksdb::LRUCacheOptions;
 using rocksdb::MergeOperator;
 using rocksdb::NewBloomFilterPolicy;
 using rocksdb::NewLRUCache;
@@ -161,12 +164,15 @@ using rocksdb::IOStatsContext;
 using rocksdb::BottommostLevelCompaction;
 using rocksdb::LDBTool;
 
+using rocksdb::kMaxSequenceNumber;
+
 using rocksdb::titandb::BlobIndex;
 using rocksdb::titandb::TitanCFDescriptor;
 using rocksdb::titandb::TitanCFOptions;
 using rocksdb::titandb::TitanDB;
 using rocksdb::titandb::TitanDBOptions;
 using rocksdb::titandb::TitanOptions;
+using rocksdb::titandb::TitanBlobRunMode;
 
 using std::shared_ptr;
 
@@ -203,6 +209,9 @@ struct crocksdb_randomfile_t      { RandomAccessFile* rep; };
 struct crocksdb_writablefile_t    { WritableFile*     rep; };
 struct crocksdb_filelock_t        { FileLock*         rep; };
 struct crocksdb_logger_t          { shared_ptr<Logger>  rep; };
+struct crocksdb_lru_cache_options_t {
+  LRUCacheOptions rep;
+};
 struct crocksdb_cache_t           { shared_ptr<Cache>   rep; };
 struct crocksdb_livefiles_t       { std::vector<LiveFileMetaData> rep; };
 struct crocksdb_column_family_handle_t  { ColumnFamilyHandle* rep; };
@@ -1099,6 +1108,11 @@ void crocksdb_release_snapshot(
   delete snapshot;
 }
 
+uint64_t crocksdb_get_snapshot_sequence_number(
+    const crocksdb_snapshot_t* snapshot) {
+  return snapshot->rep->GetSequenceNumber();
+}
+
 char* crocksdb_property_value(
     crocksdb_t* db,
     const char* propname) {
@@ -1267,9 +1281,11 @@ void crocksdb_sync_wal(
   SaveError(errptr, db->rep->SyncWAL());
 }
 
-void crocksdb_disable_file_deletions(
-    crocksdb_t* db,
-    char** errptr) {
+uint64_t crocksdb_get_latest_sequence_number(crocksdb_t* db) {
+  return db->rep->GetLatestSequenceNumber();
+}
+
+void crocksdb_disable_file_deletions(crocksdb_t* db, char** errptr) {
   SaveError(errptr, db->rep->DisableFileDeletions());
 }
 
@@ -1650,6 +1666,11 @@ const char* crocksdb_writebatch_data(crocksdb_writebatch_t* b, size_t* size) {
 
 void crocksdb_writebatch_set_save_point(crocksdb_writebatch_t* b) {
   b->rep.SetSavePoint();
+}
+
+void crocksdb_writebatch_pop_save_point(crocksdb_writebatch_t* b,
+                                        char** errptr) {
+  SaveError(errptr, b->rep.PopSavePoint());
 }
 
 void crocksdb_writebatch_rollback_to_save_point(crocksdb_writebatch_t* b, char** errptr) {
@@ -3335,10 +3356,37 @@ void crocksdb_flushoptions_set_allow_write_stall(
   opt->rep.allow_write_stall = v;
 }
 
-crocksdb_cache_t* crocksdb_cache_create_lru(size_t capacity,
-  int num_shard_bits, unsigned char strict_capacity_limit, double high_pri_pool_ratio) {
+crocksdb_lru_cache_options_t* crocksdb_lru_cache_options_create() {
+  return new crocksdb_lru_cache_options_t;
+}
+
+void crocksdb_lru_cache_options_destroy(crocksdb_lru_cache_options_t* opt) {
+  delete opt;
+}
+
+void crocksdb_lru_cache_options_set_capacity(
+    crocksdb_lru_cache_options_t* opt, size_t capacity) {
+  opt->rep.capacity = capacity;
+}
+
+void crocksdb_lru_cache_options_set_num_shard_bits(
+    crocksdb_lru_cache_options_t* opt, int num_shard_bits) {
+  opt->rep.num_shard_bits = num_shard_bits;
+}
+
+void crocksdb_lru_cache_options_set_strict_capacity_limit(
+    crocksdb_lru_cache_options_t* opt, bool strict_capacity_limit) {
+  opt->rep.strict_capacity_limit = strict_capacity_limit;
+}
+
+void crocksdb_lru_cache_options_set_high_pri_pool_ratio(
+    crocksdb_lru_cache_options_t* opt, double high_pri_pool_ratio) {
+  opt->rep.high_pri_pool_ratio = high_pri_pool_ratio;
+}
+
+crocksdb_cache_t* crocksdb_cache_create_lru(crocksdb_lru_cache_options_t* opt) {
   crocksdb_cache_t* c = new crocksdb_cache_t;
-  c->rep = NewLRUCache(capacity, num_shard_bits, strict_capacity_limit, high_pri_pool_ratio);
+  c->rep = NewLRUCache(opt->rep);
   return c;
 }
 
@@ -4386,9 +4434,11 @@ crocksdb_get_all_key_versions(crocksdb_t *db, const char *begin_key,
                               size_t begin_keylen, const char *end_key,
                               size_t end_keylen, char **errptr) {
   crocksdb_keyversions_t *result = new crocksdb_keyversions_t;
+  constexpr size_t kMaxNumKeys = std::numeric_limits<size_t>::max();
   SaveError(errptr,
             GetAllKeyVersions(db->rep, Slice(begin_key, begin_keylen),
-                              Slice(end_key, end_keylen), &result->rep));
+                              Slice(end_key, end_keylen), kMaxNumKeys,
+                              &result->rep));
   return result;
 }
 
@@ -4443,11 +4493,13 @@ struct ExternalSstFileModifier {
     handle_->GetDescriptor(&desc);
     auto cfd = reinterpret_cast<ColumnFamilyHandleImpl*>(handle_)->cfd();
     auto ioptions = *cfd->ioptions();
+    auto table_opt = TableReaderOptions(
+        ioptions, desc.options.prefix_extractor.get(), env_options_,
+        cfd->internal_comparator());
+    // Get around global seqno check.
+    table_opt.largest_seqno = kMaxSequenceNumber;
     status = ioptions.table_factory->NewTableReader(
-        TableReaderOptions(ioptions,
-                           desc.options.prefix_extractor.get(),
-                           env_options_, cfd->internal_comparator()),
-        std::move(sst_file_reader), file_size, &table_reader_);
+        table_opt, std::move(sst_file_reader), file_size, &table_reader_);
     return status;
   }
 
@@ -5088,12 +5140,12 @@ void ctitandb_options_set_min_gc_batch_size(ctitandb_options_t* options,
 }
 
 void ctitandb_options_set_blob_file_discardable_ratio(
-    ctitandb_options_t* options, float ratio) {
+    ctitandb_options_t* options, double ratio) {
   options->rep.blob_file_discardable_ratio = ratio;
 }
 
 void ctitandb_options_set_sample_file_size_ratio(ctitandb_options_t* options,
-                                                 float ratio) {
+                                                 double ratio) {
   options->rep.sample_file_size_ratio = ratio;
 }
 
@@ -5115,13 +5167,18 @@ void ctitandb_options_set_blob_cache(ctitandb_options_t* options,
 }
 
 void ctitandb_options_set_discardable_ratio(ctitandb_options_t* options,
-                                            float ratio) {
+                                            double ratio) {
   options->rep.blob_file_discardable_ratio = ratio;
 }
 
 void ctitandb_options_set_sample_ratio(ctitandb_options_t* options,
-                                       float ratio) {
+                                       double ratio) {
   options->rep.sample_file_size_ratio = ratio;
+}
+
+void ctitandb_options_set_blob_run_mode(ctitandb_options_t* options,
+                                        int mode) {
+  options->rep.blob_run_mode = static_cast<TitanBlobRunMode>(mode);
 }
 
 }  // end extern "C"

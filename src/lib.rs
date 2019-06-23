@@ -29,20 +29,21 @@ pub use librocksdb_sys::{
     self as crocksdb_ffi, new_bloom_filter, CompactionPriority, CompactionReason,
     DBBottommostLevelCompaction, DBCompactionStyle, DBCompressionType, DBEntryType, DBInfoLogLevel,
     DBRateLimiterMode, DBRecoveryMode, DBStatisticsHistogramType, DBStatisticsTickerType,
-    WriteStallCondition,
+    DBTitanDBBlobRunMode, WriteStallCondition,
 };
 pub use merge_operator::MergeOperands;
 pub use metadata::{ColumnFamilyMetaData, LevelMetaData, SstFileMetaData};
 pub use perf_context::{get_perf_level, set_perf_level, IOStatsContext, PerfContext, PerfLevel};
 pub use rocksdb::{
     load_latest_options, run_ldb_tool, set_external_sst_file_global_seq_no, BackupEngine, CFHandle,
-    DBIterator, DBVector, Env, ExternalSstFileInfo, Kv, Range, SeekKey, SequentialFile,
+    Cache, DBIterator, DBVector, Env, ExternalSstFileInfo, Kv, Range, SeekKey, SequentialFile,
     SstFileWriter, Writable, WriteBatch, DB,
 };
 pub use rocksdb_options::{
     BlockBasedOptions, CColumnFamilyDescriptor, ColumnFamilyOptions, CompactOptions,
     CompactionOptions, DBOptions, EnvOptions, FifoCompactionOptions, HistogramData,
-    IngestExternalFileOptions, RateLimiter, ReadOptions, RestoreOptions, WriteOptions,
+    IngestExternalFileOptions, LRUCacheOptions, RateLimiter, ReadOptions, RestoreOptions,
+    WriteOptions,
 };
 pub use slice_transform::SliceTransform;
 pub use table_filter::TableFilter;

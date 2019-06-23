@@ -16,8 +16,9 @@ use rocksdb::crocksdb_ffi::{
     DBStatisticsHistogramType as HistogramType, DBStatisticsTickerType as TickerType,
 };
 use rocksdb::{
-    BlockBasedOptions, ColumnFamilyOptions, CompactOptions, DBOptions, Env, FifoCompactionOptions,
-    ReadOptions, SeekKey, SliceTransform, Writable, WriteOptions, DB,
+    BlockBasedOptions, Cache, ColumnFamilyOptions, CompactOptions, DBOptions, Env,
+    FifoCompactionOptions, LRUCacheOptions, ReadOptions, SeekKey, SliceTransform, Writable,
+    WriteOptions, DB,
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -49,6 +50,7 @@ fn test_log_file_opt() {
     opts.create_if_missing(true);
     opts.set_max_log_file_size(100 * 1024 * 1024);
     opts.set_keep_log_file_num(10);
+    opts.set_recycle_log_file_num(10);
     let db = DB::open(opts, path.path().to_str().unwrap()).unwrap();
     drop(db);
 }
@@ -284,7 +286,9 @@ fn test_set_lru_cache() {
     let mut cf_opts = ColumnFamilyOptions::new();
     opts.create_if_missing(true);
     let mut block_opts = BlockBasedOptions::new();
-    block_opts.set_lru_cache(8388608, -1, 0, 0.0);
+    let mut cache_opts = LRUCacheOptions::new();
+    cache_opts.set_capacity(8388608);
+    block_opts.set_block_cache(&Cache::new_lru_cache(cache_opts));
     cf_opts.set_block_based_table_factory(&block_opts);
     DB::open_cf(opts, path.path().to_str().unwrap(), vec!["default"]).unwrap();
 }
@@ -366,7 +370,9 @@ fn test_get_block_cache_usage() {
 
     opts.create_if_missing(true);
     let mut block_opts = BlockBasedOptions::new();
-    block_opts.set_lru_cache(16 * 1024 * 1024, -1, 0, 0.0);
+    let mut cache_opts = LRUCacheOptions::new();
+    cache_opts.set_capacity(16 * 1024 * 1024);
+    block_opts.set_block_cache(&Cache::new_lru_cache(cache_opts));
     cf_opts.set_block_based_table_factory(&block_opts);
     let db = DB::open_cf(
         opts,
@@ -394,7 +400,9 @@ fn test_block_cache_capacity() {
     let mut cf_opts = ColumnFamilyOptions::new();
     opts.create_if_missing(true);
     let mut block_opts = BlockBasedOptions::new();
-    block_opts.set_lru_cache(16 * 1024 * 1024, -1, 0, 0.0);
+    let mut cache_opts = LRUCacheOptions::new();
+    cache_opts.set_capacity(16 * 1024 * 1024);
+    block_opts.set_block_cache(&Cache::new_lru_cache(cache_opts));
     cf_opts.set_block_based_table_factory(&block_opts);
     let db = DB::open_cf(
         opts,
@@ -656,8 +664,8 @@ fn test_readoptions_lower_bound() {
     db.put(b"k3", b"a").unwrap();
 
     let mut read_opts = ReadOptions::new();
-    let lower_bound = b"k2";
-    read_opts.set_iterate_lower_bound(lower_bound.as_ref());
+    let lower_bound = b"k2".to_vec();
+    read_opts.set_iterate_lower_bound(lower_bound);
     let mut iter = db.iter_opt(read_opts);
     iter.seek(SeekKey::Key(b"k3"));
     let mut count = 0;
