@@ -40,3 +40,6 @@ git = "https://github.com/gyscos/zstd-rs.git"
 [dependencies.snappy-sys]
 git = "https://github.com/busyjay/rust-snappy.git"
 branch = "static-link"
+
+[profile.release]
+debug = true
