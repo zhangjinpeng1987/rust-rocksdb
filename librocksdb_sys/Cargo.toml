@@ -43,3 +43,4 @@ branch = "static-link"
 
 [profile.release]
 debug = true
+opt-level = 0
