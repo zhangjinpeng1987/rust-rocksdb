@@ -26,6 +26,7 @@ fn main() {
     if !cfg!(target_os = "windows") {
         build.flag("-std=c++11");
         build.flag("-fno-rtti");
+        build.flag("-O0");
     }
     link_cpp(&mut build);
     build.warnings(false).compile("libcrocksdb.a");
