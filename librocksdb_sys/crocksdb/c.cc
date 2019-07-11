@@ -510,20 +510,20 @@ struct crocksdb_slicetransform_t : public SliceTransform {
     (*destructor_)(state_);
   }
 
-  virtual const char* Name() const override { return (*name_)(state_); }
+  virtual const char* Name() const override { return (name_)(state_); }
 
   virtual Slice Transform(const Slice& src) const override {
     size_t len;
-    char* dst = (*transform_)(state_, src.data(), src.size(), &len);
+    char* dst = (transform_)(state_, src.data(), src.size(), &len);
     return Slice(dst, len);
   }
 
   virtual bool InDomain(const Slice& src) const override {
-    return (*in_domain_)(state_, src.data(), src.size());
+    return (in_domain_)(state_, src.data(), src.size());
   }
 
   virtual bool InRange(const Slice& src) const override {
-    return (*in_range_)(state_, src.data(), src.size());
+    return (in_range_)(state_, src.data(), src.size());
   }
 };
 
