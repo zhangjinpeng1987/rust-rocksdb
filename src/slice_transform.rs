@@ -61,8 +61,8 @@ extern "C" fn transform(
 ) -> *const u8 {
     unsafe {
         let transform = &mut *(transform as *mut SliceTransformProxy);
-        let key = slice::from_raw_parts(key, key_len);
-        let prefix = transform.transform.transform(key);
+        let key_slice = slice::from_raw_parts(key, key_len);
+        let prefix = transform.transform.transform(key_slice);
         *dest_len = prefix.len() as size_t;
         prefix.as_ptr() as *const u8
     }
@@ -71,8 +71,8 @@ extern "C" fn transform(
 extern "C" fn in_domain(transform: *mut c_void, key: *const u8, key_len: size_t) -> u8 {
     unsafe {
         let transform = &mut *(transform as *mut SliceTransformProxy);
-        let key = slice::from_raw_parts(key, key_len);
-        transform.transform.in_domain(key) as u8
+        let key_slice = slice::from_raw_parts(key, key_len);
+        transform.transform.in_domain(key_slice) as u8
     }
 }
 
